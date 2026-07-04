@@ -1,10 +1,17 @@
-use crate::cmd;
-use crate::util::constants::ZFS;
 use crate::util::{rules, zfs_file, zfs_info};
+use crate::zfs_cmd;
 use anyhow::{Context, ensure};
 use regex::Regex;
 
-use crate::util::types::RemoveSnapOpts;
+pub struct RemoveSnapOpts {
+    pub files: bool,
+    pub snaps: bool,
+    pub omit_fs: Option<String>,
+    pub omit_snaps: Option<String>,
+    pub recurse: bool,
+    pub all: bool,
+    pub noop: bool,
+}
 
 pub fn run(targets: &[String], opts: &RemoveSnapOpts) -> anyhow::Result<()> {
     let mut snapshot_list = if opts.snaps {
@@ -12,13 +19,11 @@ pub fn run(targets: &[String], opts: &RemoveSnapOpts) -> anyhow::Result<()> {
     } else if opts.all {
         snapshot_list_from_dataset_names(targets)
     } else if opts.files {
-        let mounts = zfs_info::get_mounted_filesystems()?;
-        let arg_list = zfs_file::files_to_datasets(targets, &mounts);
-        snapshot_list_from_dataset_paths(&arg_list)
+        let targets = zfs_file::files_to_datasets(targets, &zfs_info::get_mounted_filesystems()?);
+        snapshot_list_from_dataset_paths(&targets)
     } else if opts.recurse {
-        let all_filesystems = zfs_info::all_filesystems()?;
-        let arg_list = zfs_info::dataset_list_recursive(targets, &all_filesystems);
-        snapshot_list_from_dataset_paths(&arg_list)
+        let targets = zfs_info::dataset_list_recursive(targets, &zfs_info::all_filesystems()?);
+        snapshot_list_from_dataset_paths(&targets)
     } else {
         snapshot_list_from_dataset_paths(targets)
     }?;
@@ -63,7 +68,7 @@ fn remove_snaps(list: Vec<String>, noop: bool) -> anyhow::Result<()> {
         // Double check that we aren't going to remove a dataset
         ensure!(snap.contains("@"), "refusing to remove {snap}");
 
-        let mut cmd = cmd!(ZFS, "destroy", &snap);
+        let mut cmd = zfs_cmd!("destroy", &snap);
         tracing::info!("removing {snap}");
 
         if !noop {

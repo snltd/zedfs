@@ -27,10 +27,10 @@ pub fn log_error(cmd: &Command, output: Output) -> String {
 
 /// Builds a command from its args, returning a Command. Logs the constructed command
 #[macro_export]
-macro_rules! cmd {
+macro_rules! zfs_cmd {
     ( $bin:expr $(, $arg:expr )* $(,)? ) => {{
         use std::process::{Command, Stdio};
-        let mut cmd = Command::new($bin);
+        let mut cmd = Command::new($crate::util::constants::ZFS);
         $(
             cmd.arg($arg);
         )*
@@ -45,8 +45,8 @@ macro_rules! cmd {
 /// Executes zfs(8) with the given args, returning a result of stdout
 #[macro_export]
 macro_rules! zfs_output {
-    ( $bin:expr, $( $arg:expr ),+ $(,)? ) => {{
-        let mut cmd = $crate::cmd!($crate::util::constants::ZFS, $bin, $($arg), +);
+    ( $( $arg:expr ),+ $(,)? ) => {{
+        let mut cmd = $crate::zfs_cmd!( $($arg), +);
         let output = cmd.output()?;
 
         if output.status.success() {
@@ -56,5 +56,15 @@ macro_rules! zfs_output {
         } else {
             anyhow::bail!($crate::util::macros::log_error(&cmd, output))
         }
+    }};
+}
+
+/// Executes zfs(8) with the given args, returning a bool of success or failure
+#[macro_export]
+macro_rules! zfs_success {
+    ( $( $arg:expr ),+ $(,)? ) => {{
+        let mut cmd = $crate::zfs_cmd!( $($arg), +);
+        let output = cmd.output()?;
+        Ok(output.status.success())
     }};
 }

@@ -15,13 +15,3 @@ pub struct Mount {
 // pub type MountList = Vec<(Utf8PathBuf, String)>;
 // pub type Filesystems = Vec<String>;
 // pub type ZfsMounts = Vec<(PathBuf, String)>;
-
-pub struct RemoveSnapOpts {
-    pub files: bool,
-    pub snaps: bool,
-    pub omit_fs: Option<String>,
-    pub omit_snaps: Option<String>,
-    pub recurse: bool,
-    pub all: bool,
-    pub noop: bool,
-}

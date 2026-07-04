@@ -2,11 +2,12 @@ mod util;
 
 mod commands;
 
+use crate::commands::remove_snaps::RemoveSnapOpts;
+use crate::commands::snap::{SnapOpts, SnapType};
 use clap::{Parser, Subcommand};
 use std::process::ExitCode;
 use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
-use util::types::RemoveSnapOpts;
 
 #[derive(Parser)]
 #[clap(version, about = "Help with some ZFS tasks")]
@@ -54,6 +55,34 @@ enum Commands {
     /// Find snapshots which don't match expected names
     #[command(alias = "rogues")]
     RogueSnaps {},
+    /// Take snapshost
+    Snap {
+        #[clap(
+            short = 't',
+            long = "type",
+            required = true,
+            value_enum,
+            long_help = "Specify the type of snapshot to take: this  determines the \
+        snapshot names\n  e.g  day    @wednesday\n       month  @january\n       \
+        date   @2008-30-01\n       time   @08:45\n       now    @2008-30-01_08:45:00"
+        )]
+        snap_type: SnapType,
+        /// Specifies that args are files: the filesystems containing these files will be snapshotted
+        #[clap(short, long, conflicts_with = "recurse")]
+        files: bool,
+        /// Print what would happen, without doing it                                                     
+        #[clap(short, long)]
+        noop: bool,
+        /// Recurse down dataset hierarchies                                                              
+        #[clap(short, long)]
+        recurse: bool,
+        /// Comma-separated list of filesystems to NOT snapshot. Accepts * as a wildcard.
+        #[clap(short, long)]
+        omit: Option<String>,
+        /// Dataset or directory name. If not args are given, every dataset will be snapshotted.
+        #[clap(required_if_eq_any([("files", "true"), ("recurse", "true")]))]
+        targets: Option<Vec<String>>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -97,6 +126,23 @@ fn main() -> ExitCode {
             },
         ),
         Commands::RogueSnaps {} => commands::rogue_snaps::run(),
+        Commands::Snap {
+            snap_type,
+            files,
+            noop,
+            recurse,
+            omit,
+            targets,
+        } => commands::snap::run(
+            targets,
+            &SnapOpts {
+                snap_type,
+                files,
+                noop,
+                recurse,
+                omit,
+            },
+        ),
     };
 
     match result {
