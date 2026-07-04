@@ -10,6 +10,11 @@ pub struct Mount {
     pub device: String,
 }
 
+pub struct ZpZrOpts {
+    pub noop: bool,
+    pub no_clobber: bool,
+}
+
 // pub type Filesystem = String;
 // pub type Snapshot = String;
 // pub type MountList = Vec<(Utf8PathBuf, String)>;

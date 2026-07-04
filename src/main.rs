@@ -5,6 +5,7 @@ mod commands;
 use crate::commands::remove_snaps::RemoveSnapOpts;
 use crate::commands::snap::{SnapOpts, SnapType};
 use crate::commands::touch_from_snap::TouchFromSnapOpts;
+use crate::util::types::ZpZrOpts;
 use camino::Utf8PathBuf;
 use clap::{Parser, Subcommand};
 use std::process::ExitCode;
@@ -23,6 +24,18 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// Promote files from a ZFS snapshot
+    Promote {
+        /// By default, existing live files are overwritten. With this option, they are not
+        #[clap(short = 'N', long)]
+        no_clobber: bool,
+        /// Print what would happen, without doing it
+        #[clap(short, long)]
+        noop: bool,
+        /// File(s) to promote
+        #[clap(required = true)]
+        file_list: Vec<Utf8PathBuf>,
+    },
     /// Show the actual disk space used by filesystems and snapshots
     #[command(alias = "df")]
     RealUsage {},
@@ -117,6 +130,11 @@ fn main() -> ExitCode {
     tracing::subscriber::set_global_default(subscriber).expect("error setting default subscriber");
 
     let result = match cli.command {
+        Commands::Promote {
+            no_clobber,
+            noop,
+            file_list,
+        } => commands::promote::run(file_list, &ZpZrOpts { no_clobber, noop }),
         Commands::RealUsage {} => commands::real_usage::run(),
         Commands::RemoveSnaps {
             files,
