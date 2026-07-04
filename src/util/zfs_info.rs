@@ -138,7 +138,7 @@ mod test {
 
         let raw_list: Vec<String> = fs::read_to_string(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/test/resources/mountpoint_list.txt"
+            "/test/util/resources/mountpoint_list.txt"
         ))
         .unwrap()
         .lines()

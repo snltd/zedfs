@@ -4,6 +4,8 @@ mod commands;
 
 use crate::commands::remove_snaps::RemoveSnapOpts;
 use crate::commands::snap::{SnapOpts, SnapType};
+use crate::commands::touch_from_snap::TouchFromSnapOpts;
+use camino::Utf8PathBuf;
 use clap::{Parser, Subcommand};
 use std::process::ExitCode;
 use tracing::Level;
@@ -83,6 +85,18 @@ enum Commands {
         #[clap(required_if_eq_any([("files", "true"), ("recurse", "true")]))]
         targets: Option<Vec<String>>,
     },
+    /// Align timestamps with those in a given snapshot
+    TouchFromSnap {
+        /// Use specified snapshot name, rather than yesterday's
+        #[clap(short, long)]
+        snapname: Option<String>,
+        /// Print what would happen, without doing it
+        #[clap(short, long)]
+        noop: bool,
+        /// One or more directories
+        #[arg(required = true)]
+        dirs: Vec<Utf8PathBuf>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -143,6 +157,11 @@ fn main() -> ExitCode {
                 omit,
             },
         ),
+        Commands::TouchFromSnap {
+            snapname,
+            noop,
+            dirs,
+        } => commands::touch_from_snap::run(dirs, &TouchFromSnapOpts { snapname, noop }),
     };
 
     match result {
