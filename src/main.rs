@@ -1,0 +1,109 @@
+mod util;
+
+mod commands;
+
+use clap::{Parser, Subcommand};
+use std::process::ExitCode;
+use tracing::Level;
+use tracing_subscriber::FmtSubscriber;
+use util::types::RemoveSnapOpts;
+
+#[derive(Parser)]
+#[clap(version, about = "Help with some ZFS tasks")]
+struct Cli {
+    /// Be verbose
+    #[clap(short, long, global = true, action = clap::ArgAction::Count)]
+    pub verbose: u8,
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Debug, Subcommand)]
+enum Commands {
+    /// Show the actual disk space used by filesystems and snapshots
+    #[command(alias = "df")]
+    RealUsage {},
+    /// Bulk-remove snapshots
+    #[command(alias = "rm")]
+    RemoveSnaps {
+        /// Specifies that args are files: the snapshots containing these files will be destroyed
+        #[clap(short, long)]
+        files: bool,
+        /// Specifies that all args are snapshot names
+        #[clap(short = 's', long = "snaps")]
+        snaps: bool,
+        /// Purge ALL datasets with this name ANYWHERE in the hierarchy
+        #[clap(short = 'A', long = "all-datasets")]
+        all: bool,
+        /// Comma-separated list of filesystems from which snapshots should NOT be removed. Accepts * as a wildcard.
+        #[clap(short = 'o', long)]
+        omit_fs: Option<String>,
+        /// Comma-separated list of snapshot names which should NOT be removed. Accepts * as a wildcard.
+        #[clap(short = 'O', long)]
+        omit_snaps: Option<String>,
+        /// Recurse down dataset hierarchies
+        #[clap(short, long, conflicts_with = "snaps", conflicts_with = "all")]
+        recurse: bool,
+        /// Say what would happen, without actually doing it
+        #[arg(short, long)]
+        noop: bool,
+        /// One or more datasets, snapshots, or directory names
+        #[arg(required = true)]
+        targets: Vec<String>,
+    },
+    /// Find snapshots which don't match expected names
+    #[command(alias = "rogues")]
+    RogueSnaps {},
+}
+
+fn main() -> ExitCode {
+    let cli = Cli::parse();
+
+    let level = match cli.verbose {
+        0 => Level::WARN,
+        1 => Level::INFO,
+        2 => Level::DEBUG,
+        _ => Level::TRACE,
+    };
+
+    let subscriber = FmtSubscriber::builder()
+        .with_max_level(level)
+        .with_writer(std::io::stderr) // Keep stdout clean for your ZFS data!
+        .finish();
+
+    tracing::subscriber::set_global_default(subscriber).expect("error setting default subscriber");
+
+    let result = match cli.command {
+        Commands::RealUsage {} => commands::real_usage::run(),
+        Commands::RemoveSnaps {
+            files,
+            snaps,
+            all,
+            omit_fs,
+            omit_snaps,
+            noop,
+            recurse,
+            targets,
+        } => commands::remove_snaps::run(
+            &targets,
+            &RemoveSnapOpts {
+                files,
+                snaps,
+                all,
+                noop,
+                omit_fs,
+                omit_snaps,
+                recurse,
+            },
+        ),
+        Commands::RogueSnaps {} => commands::rogue_snaps::run(),
+    };
+
+    match result {
+        Ok(_) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("ERROR: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}

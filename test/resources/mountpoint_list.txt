@@ -1,0 +1,10 @@
+none	fast
+none	fast/zone
+none	fast/zone/build
+/build	fast/zone/build/build
+/build/configs	fast/zone/build/config
+/rpool	rpool
+/zones	rpool/zones
+/zones/serv-build	rpool/zones/serv-build
+legacy	rpool/zones/serv-build/ROOT
+legacy	rpool/zones/serv-build/ROOT/zbe-3
