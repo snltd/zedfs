@@ -10,6 +10,8 @@ pub struct Mount {
     pub device: String,
 }
 
+#[derive(Debug)]
+#[cfg_attr(test, derive(Default))]
 pub struct ZpZrOpts {
     pub noop: bool,
     pub no_clobber: bool,

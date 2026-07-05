@@ -110,6 +110,7 @@ fn ensure_trailing_slash(path: &str) -> String {
 #[cfg(test)]
 mod test {
     use super::*;
+    use snltest::load_fixture;
 
     #[test]
     fn test_zfs_mounts() {
@@ -136,14 +137,10 @@ mod test {
             },
         ];
 
-        let raw_list: Vec<String> = fs::read_to_string(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/test/util/resources/mountpoint_list.txt"
-        ))
-        .unwrap()
-        .lines()
-        .map(String::from)
-        .collect();
+        let raw_list: Vec<String> = load_fixture!("util/mountpoint_list.txt")
+            .lines()
+            .map(String::from)
+            .collect();
 
         assert_eq!(expected, mounted_filesystems(&raw_list).unwrap());
     }

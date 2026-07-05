@@ -67,6 +67,21 @@ enum Commands {
         #[arg(required = true)]
         targets: Vec<String>,
     },
+    /// Restore files from snapshots
+    Restore {
+        /// Automatically recover the newest backup
+        #[clap(short, long)]
+        auto: bool,
+        /// By default, existing live files are overwritten. With this option, they are not
+        #[clap(short = 'N', long)]
+        no_clobber: bool,
+        /// Print what would happen, without doing it
+        #[clap(short, long)]
+        noop: bool,
+        /// File(s) to restore
+        #[clap(required = true)]
+        file_list: Vec<Utf8PathBuf>,
+    },
     /// Find snapshots which don't match expected names
     #[command(alias = "rogues")]
     RogueSnaps {},
@@ -157,6 +172,12 @@ fn main() -> ExitCode {
                 recurse,
             },
         ),
+        Commands::Restore {
+            auto,
+            no_clobber,
+            noop,
+            file_list,
+        } => commands::restore::command::run(file_list, auto, &ZpZrOpts { no_clobber, noop }),
         Commands::RogueSnaps {} => commands::rogue_snaps::run(),
         Commands::Snap {
             snap_type,

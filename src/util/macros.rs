@@ -28,16 +28,14 @@ pub fn log_error(cmd: &Command, output: Output) -> String {
 /// Builds a command from its args, returning a Command. Logs the constructed command
 #[macro_export]
 macro_rules! zfs_cmd {
-    ( $bin:expr $(, $arg:expr )* $(,)? ) => {{
+    ( $( $arg:expr ),+ $(,)? ) => {{
         use std::process::{Command, Stdio};
         let mut cmd = Command::new($crate::util::constants::ZFS);
         $(
             cmd.arg($arg);
         )*
         cmd.stderr(Stdio::piped());
-
         tracing::debug!(command = $crate::util::macros::cmd_to_string(&cmd));
-
         cmd
     }};
 }

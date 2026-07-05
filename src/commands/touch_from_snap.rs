@@ -132,12 +132,11 @@ fn formatted_time(ts: SystemTime) -> anyhow::Result<String> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use snltest::fixture;
 
     #[test]
     fn test_timestamps_for() {
-        let root = Utf8PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        dbg!(root.join("test/touch_from_snap/resources"));
-        let result = timestamps_for(&root.join("test/touch-from-snap/resources"));
+        let result = timestamps_for(&fixture!("touch-from-snap"));
 
         let mut expected_files: Vec<Utf8PathBuf> = vec![
             "dir1".into(),
