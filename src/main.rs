@@ -38,7 +38,11 @@ enum Commands {
     },
     /// Show the actual disk space used by filesystems and snapshots
     #[command(alias = "df")]
-    RealUsage {},
+    RealUsage {
+        /// Show zero-size datasets
+        #[clap(short = '0', long)]
+        show_zeroes: bool,
+    },
     /// Bulk-remove snapshots
     #[command(alias = "rm")]
     RemoveSnaps {
@@ -150,7 +154,7 @@ fn main() -> ExitCode {
             noop,
             file_list,
         } => commands::promote::run(file_list, &ZpZrOpts { no_clobber, noop }),
-        Commands::RealUsage {} => commands::real_usage::run(),
+        Commands::RealUsage { show_zeroes } => commands::real_usage::run(show_zeroes),
         Commands::RemoveSnaps {
             files,
             snaps,

@@ -9,21 +9,31 @@ struct Dataset {
     name: String,
 }
 
-pub fn run() -> anyhow::Result<()> {
-    let raw_usage = zfs_output!("list", "-t", "all", "-Ho", "name,used,usedbydataset")?;
-    let datasets = parse_list_output(&raw_usage).context("failed to parse ZFS output")?;
+pub fn run(show_zeroes: bool) -> anyhow::Result<()> {
+    let raw_usage = zfs_output!("list", "-t", "all", "-Ho", "name,used,usedbydataset")
+        .context("failed to list ZFS datasets")?;
+    let datasets = parse_list_output(&raw_usage, show_zeroes);
     println!("{}", format_output(datasets));
     Ok(())
 }
 
-fn parse_list_output(raw: &str) -> anyhow::Result<Vec<Dataset>> {
-    let mut non_zero_datasets: Vec<Dataset> = raw
+fn parse_list_output(raw: &str, show_zeroes: bool) -> Vec<Dataset> {
+    let all_datasets: Vec<Dataset> = raw
         .lines()
         .filter_map(|l| parse_dataset_line(l).ok())
         .collect();
 
-    non_zero_datasets.sort_by_key(|dataset| dataset.byte_size);
-    Ok(non_zero_datasets)
+    let mut datasets = if show_zeroes {
+        all_datasets
+    } else {
+        all_datasets
+            .into_iter()
+            .filter(|d| d.byte_size > 0)
+            .collect()
+    };
+
+    datasets.sort_by_key(|dataset| dataset.byte_size);
+    datasets
 }
 
 fn parse_dataset_line(line: &str) -> anyhow::Result<Dataset> {
