@@ -1,4 +1,4 @@
-use super::command::Candidate;
+use super::command::File;
 use jiff::Timestamp;
 use owo_colors::OwoColorize;
 use regex::Regex;
@@ -6,7 +6,7 @@ use std::io::{self, Write};
 
 type UserChoice = Option<(usize, Option<String>)>;
 
-pub fn print_options(original_file: Option<Candidate>, candidates: &[Candidate]) {
+pub fn print_options(original_file: Option<File>, candidates: &[File]) {
     let mut stdout = io::stdout();
 
     for (index, candidate) in candidates.iter().enumerate() {
@@ -44,7 +44,7 @@ pub fn parse_choice(input: &str) -> UserChoice {
     Some((number, command))
 }
 
-fn basic_line(index: usize, candidate: &Candidate) -> anyhow::Result<String> {
+fn basic_line(index: usize, candidate: &File) -> anyhow::Result<String> {
     Ok(format!(
         "{:>2} {:<20} {:<35} {}",
         index,
@@ -57,8 +57,8 @@ fn basic_line(index: usize, candidate: &Candidate) -> anyhow::Result<String> {
 }
 
 fn decorated_line(
-    original_file: &Option<Candidate>,
-    candidate_file: &Candidate,
+    original_file: &Option<File>,
+    candidate_file: &File,
     basic_line: String,
 ) -> String {
     if let Some(f) = original_file {
@@ -80,7 +80,7 @@ mod test {
 
     #[test]
     fn test_basic_line() {
-        let candidate = Candidate {
+        let candidate = File {
             snapname: "may".to_string(),
             path: Utf8PathBuf::from("some/path"),
             mtime: 1730563919,

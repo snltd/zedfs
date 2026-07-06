@@ -1,23 +1,23 @@
 use super::user_interaction;
 use crate::util::types::ZpZrOpts;
 use crate::util::{file_copier, zfs_info};
-use anyhow::{Context, ensure};
+use anyhow::{Context, bail, ensure};
 use camino::{Utf8Path, Utf8PathBuf};
 use std::os::unix::fs::MetadataExt;
 use std::process::Command;
-use std::{fs, io};
+use std::{env, fs, io};
 
 pub const DIFF: &str = "/usr/bin/diff";
 
 #[derive(Clone, Debug)]
-pub struct Candidate {
+pub struct File {
     pub snapname: String,
     pub path: Utf8PathBuf,
     pub size: u64,
     pub mtime: i64, // epoch seconds
 }
 
-impl Candidate {
+impl File {
     pub fn from(path: &Utf8Path, snapdir: &Utf8Path) -> anyhow::Result<Self> {
         let metadata =
             fs::metadata(path).with_context(|| format!("cannot get metadata for {path}"))?;
@@ -42,7 +42,7 @@ pub struct CopyAction {
 
 pub fn run(files: Vec<Utf8PathBuf>, auto: bool, opts: &ZpZrOpts) -> anyhow::Result<()> {
     for file in files {
-        restore_file(&file.canonicalize_utf8()?, auto, opts)?;
+        restore_file(&canonical_file(&file)?, auto, opts)?;
     }
 
     Ok(())
@@ -61,10 +61,19 @@ fn restore_action(
     opts: &ZpZrOpts,
 ) -> anyhow::Result<Option<CopyAction>> {
     // file may well not exist, so let's assume user error if its PARENT isn't there
-    let parent = file.parent().unwrap();
-    let target_dir = parent.canonicalize_utf8()?;
-    let fs_root = zfs_info::dataset_root(&target_dir)?;
-    let mut candidates = candidates(&fs_root, file)?;
+    let parent = file
+        .parent()
+        .with_context(|| format!("cannot get parent of {file}"))?;
+
+    let target_dir = parent
+        .canonicalize_utf8()
+        .with_context(|| format!("cannot canonicalize {parent}"))?;
+
+    let fs_root = zfs_info::dataset_root(&target_dir)
+        .with_context(|| format!("cannot get dataset root for {target_dir}"))?;
+
+    let mut candidates = candidates(&fs_root, file)
+        .with_context(|| format!("cannot get candidate list for {file} under {fs_root}"))?;
 
     if candidates.is_empty() {
         println!("No matches found.");
@@ -73,7 +82,8 @@ fn restore_action(
 
     candidates.sort_by_key(|c| std::cmp::Reverse(c.mtime));
 
-    let original_file = original_details(file)?;
+    let original_file =
+        original_details(file).with_context(|| format!("cannot get metadata of {file}"))?;
 
     let choice_tuple = if auto {
         Some((0_usize, None))
@@ -87,19 +97,16 @@ fn restore_action(
         return Ok(None);
     }
 
-    let (candidate_index, command_option) = choice_tuple.unwrap();
+    let (candidate_index, command_option) = choice_tuple.context("no choice tuple")?;
 
-    let candidate_object = match candidates.get(candidate_index) {
-        Some(obj) => obj,
-        None => {
-            tracing::error!("cannot find requested item");
-            return Ok(None);
-        }
-    };
+    let candidate_object = candidates
+        .get(candidate_index)
+        .context("cannot look-up requested item")?;
 
     if let Some(command) = command_option {
         match command.as_str() {
-            "k" => backup_target(file, opts.noop)?,
+            "k" => backup_target(file, opts.noop)
+                .with_context(|| format!("failed to back up {file}"))?,
             "d" => {
                 diff_files(&candidate_object.path, file);
                 return Ok(None);
@@ -153,13 +160,14 @@ fn backup_target(src: &Utf8Path, noop: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn candidates(fs_root: &Utf8Path, file: &Utf8Path) -> anyhow::Result<Vec<Candidate>> {
-    let snapshot_dirs = all_snapshot_dirs(fs_root).context("no snapshots under {fs_root}")?;
+fn candidates(fs_root: &Utf8Path, file: &Utf8Path) -> anyhow::Result<Vec<File>> {
+    let snapshot_dirs =
+        all_snapshot_dirs(fs_root).with_context(|| format!("no snapshots under {fs_root}"))?;
 
     tracing::info!("Found {} snapshots.", snapshot_dirs.len());
 
     let relative_path = path_relative_to_fs_root(file, fs_root)
-        .context("Failed to calculate path for {file} relative to {fs_root}")?;
+        .with_context(|| format!("Failed to calculate path for {file} relative to {fs_root}"))?;
 
     Ok(snapshot_dirs
         .iter()
@@ -167,7 +175,7 @@ fn candidates(fs_root: &Utf8Path, file: &Utf8Path) -> anyhow::Result<Vec<Candida
             let path = snapdir.join(&relative_path);
             if path.exists() {
                 tracing::debug!("found candidate: {path}: ");
-                Candidate::from(&path, snapdir).ok()
+                File::from(&path, snapdir).ok()
             } else {
                 tracing::debug!("no candidate at {path}");
                 None
@@ -176,11 +184,11 @@ fn candidates(fs_root: &Utf8Path, file: &Utf8Path) -> anyhow::Result<Vec<Candida
         .collect())
 }
 
-fn original_details(file: &Utf8Path) -> io::Result<Option<Candidate>> {
+fn original_details(file: &Utf8Path) -> io::Result<Option<File>> {
     let ret = if file.exists() {
         let metadata = fs::metadata(file)?;
 
-        Some(Candidate {
+        Some(File {
             snapname: ".".to_string(),
             path: file.to_owned(),
             mtime: metadata.mtime(),
@@ -197,26 +205,24 @@ fn path_relative_to_fs_root(file: &Utf8Path, fs_root: &Utf8Path) -> Option<Utf8P
     file.strip_prefix(fs_root).ok().map(|p| p.to_owned())
 }
 
-// // We need to canonicalize the source file, whether it exists or not.
-// fn canonical_file(file: Utf8PathBuf) -> anyhow::Result<Utf8PathBuf> {
-//     if file.is_absolute() {
-//         return Ok(file.canonicalize_utf8()?);
-//     }
+// We need to canonicalize the source file, whether it exists or not.
+fn canonical_file(file: &Utf8Path) -> anyhow::Result<Utf8PathBuf> {
+    if file.is_absolute() {
+        return Ok(file.canonicalize_utf8()?);
+    }
 
-//     let pwd = match Utf8PathBuf::from_path_buf(env::current_dir()?) {
-//         Ok(path) => path.canonicalize_utf8()?,
-//         Err(_) => bail!("Failed to ascertain pwd"),
-//     };
+    let pwd = match Utf8PathBuf::from_path_buf(env::current_dir()?) {
+        Ok(path) => path.canonicalize_utf8()?,
+        Err(_) => bail!("Failed to ascertain pwd"),
+    };
 
-//     Ok(pwd.join(file))
-// }
+    Ok(pwd.join(file))
+}
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use camino_tempfile::tempdir;
     use snltest::fixture;
-    use std::fs;
 
     #[cfg(target_os = "illumos")]
     #[test]
@@ -280,29 +286,4 @@ mod test {
                 .is_empty()
         );
     }
-
-    #[test]
-    fn test_restore_action_auto_mode() {
-        // let temp_dir = tempdir().unwrap();
-        // let file_path = temp_dir.path().join("test_file.txt");
-        // fs::write(&file_path, "test content").unwrap();
-
-        let result = restore_action(&file_path, true, &ZpZrOpts::default());
-
-        dbg!(result);
-        //     .unwrap()
-        //     .unwrap();
-
-        // assert_eq!(result.src, file_path);
-        // assert_eq!(result.dest, file_path);
-    }
-
-    // #[test]
-    // fn test_restore_action_no_candidates() {
-    //     let temp_dir = tempdir().unwrap();
-    //     let file_path = temp_dir.path().join("nonexistent_file.txt");
-    //     let result = restore_action(&file_path, false, &ZpZrOpts::default()).unwrap();
-
-    //     assert!(result.is_none());
-    // }
 }

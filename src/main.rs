@@ -60,7 +60,7 @@ enum Commands {
         omit_fs: Option<Vec<String>>,
         /// Snapshot name(s) which should NOT be removed. Accepts * as a wildcard.
         #[clap(short = 'O', long)]
-        omit_snaps: Option<Vec<String>>,
+        omit_snap: Option<Vec<String>>,
         /// Recurse down dataset hierarchies
         #[clap(short, long, conflicts_with = "snaps", conflicts_with = "all")]
         recurse: bool,
@@ -160,7 +160,7 @@ fn main() -> ExitCode {
             snaps,
             all,
             omit_fs,
-            omit_snaps,
+            omit_snap,
             noop,
             recurse,
             targets,
@@ -172,7 +172,7 @@ fn main() -> ExitCode {
                 all,
                 noop,
                 omit_fs,
-                omit_snaps,
+                omit_snap,
                 recurse,
             },
         ),

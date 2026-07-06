@@ -7,10 +7,15 @@ pub struct RemoveSnapOpts {
     pub files: bool,
     pub snaps: bool,
     pub omit_fs: Option<Vec<String>>,
-    pub omit_snaps: Option<Vec<String>>,
+    pub omit_snap: Option<Vec<String>>,
     pub recurse: bool,
     pub all: bool,
     pub noop: bool,
+}
+
+enum FilterType {
+    FilesystemName,
+    SnapshotName,
 }
 
 pub fn run(targets: &[String], opts: &RemoveSnapOpts) -> anyhow::Result<()> {
@@ -28,12 +33,12 @@ pub fn run(targets: &[String], opts: &RemoveSnapOpts) -> anyhow::Result<()> {
         snapshot_list_from_dataset_paths(targets)
     }?;
 
-    if let Some(omit_snaps) = &opts.omit_snaps {
-        snapshot_list = filter_by_snap_name(&snapshot_list, omit_snaps);
+    if let Some(omit_rules) = &opts.omit_snap {
+        snapshot_list = filter_list(&snapshot_list, omit_rules, FilterType::SnapshotName);
     }
 
-    if let Some(omit_fs) = &opts.omit_fs {
-        snapshot_list = filter_by_fs_name(&snapshot_list, omit_fs);
+    if let Some(omit_rules) = &opts.omit_fs {
+        snapshot_list = filter_list(&snapshot_list, omit_rules, FilterType::FilesystemName);
     }
 
     if snapshot_list.is_empty() {
@@ -81,12 +86,15 @@ fn remove_snaps(list: Vec<String>, noop: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn filter_list(snapshot_list: &[String], omit_rules: &[String], is_snapshot: bool) -> Vec<String> {
-    snapshot_list
+fn filter_list(snapshots: &[String], omit_rules: &[String], filter_on: FilterType) -> Vec<String> {
+    snapshots
         .iter()
         .filter(|f| {
             if let Some((fs_name, snap_name)) = f.split_once("@") {
-                let item = if is_snapshot { snap_name } else { fs_name };
+                let item = match filter_on {
+                    FilterType::FilesystemName => fs_name,
+                    FilterType::SnapshotName => snap_name,
+                };
                 rules::omit_rules_match(item, omit_rules)
             } else {
                 false
@@ -94,14 +102,6 @@ fn filter_list(snapshot_list: &[String], omit_rules: &[String], is_snapshot: boo
         })
         .map(|s| s.to_string())
         .collect()
-}
-
-fn filter_by_snap_name(snapshot_list: &[String], omit_rules: &[String]) -> Vec<String> {
-    filter_list(snapshot_list, omit_rules, true)
-}
-
-fn filter_by_fs_name(snapshot_list: &[String], omit_rules: &[String]) -> Vec<String> {
-    filter_list(snapshot_list, omit_rules, false)
 }
 
 // // All snapshots whose dataset name (final part) is one of those given.
@@ -161,7 +161,11 @@ mod test {
 
         assert_eq!(
             expected_1,
-            filter_by_snap_name(&input, &vec!["snap*".to_string(), "other".to_string()])
+            filter_list(
+                &input,
+                &["snap*".to_string(), "other".to_string()],
+                FilterType::SnapshotName,
+            )
         );
 
         let expected_2 = vec![
@@ -171,7 +175,7 @@ mod test {
 
         assert_eq!(
             expected_2,
-            filter_by_snap_name(&input, &vec!["*1".to_string()])
+            filter_list(&input, &["*1".to_string()], FilterType::SnapshotName)
         );
 
         let expected_3 = vec![
@@ -182,14 +186,15 @@ mod test {
 
         assert_eq!(
             expected_3,
-            filter_by_snap_name(&input, &vec!["*t*".to_string()])
+            filter_list(&input, &["*t*".to_string()], FilterType::SnapshotName)
         );
 
         assert_eq!(
             input,
-            filter_by_snap_name(
+            filter_list(
                 &input,
-                &vec!["nothing,matches".to_string(), "*these".to_string()]
+                &["nothing,matches".to_string(), "*these".to_string()],
+                FilterType::SnapshotName
             )
         );
     }
@@ -213,7 +218,7 @@ mod test {
 
         assert_eq!(
             expected_1,
-            filter_by_fs_name(&input, &vec!["test/*".to_string()])
+            filter_list(&input, &["test/*".to_string()], FilterType::FilesystemName)
         );
 
         let expected_2 = vec![
@@ -224,7 +229,7 @@ mod test {
 
         assert_eq!(
             expected_2,
-            filter_by_fs_name(&input, &vec!["*1".to_string()])
+            filter_list(&input, &["*1".to_string()], FilterType::FilesystemName)
         );
 
         let expected_3 = vec![
@@ -235,16 +240,23 @@ mod test {
 
         assert_eq!(
             expected_3,
-            filter_by_fs_name(&input, &vec!["*test1,test2".to_string()])
+            filter_list(
+                &input,
+                &["*test1".to_string(), "test2".to_string()],
+                FilterType::FilesystemName
+            )
         );
 
         let expected_4: Vec<String> = Vec::new();
 
         assert_eq!(
             expected_4,
-            filter_by_fs_name(&input, &vec!["*t*".to_string()])
+            filter_list(&input, &["*t*".to_string()], FilterType::FilesystemName)
         );
 
-        assert_eq!(input, filter_by_fs_name(&input, &vec!["snap".to_string()]));
+        assert_eq!(
+            input,
+            filter_list(&input, &["snap".to_string()], FilterType::FilesystemName)
+        );
     }
 }
