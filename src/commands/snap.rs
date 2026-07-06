@@ -18,13 +18,10 @@ pub struct SnapOpts {
     pub files: bool,
     pub noop: bool,
     pub recurse: bool,
-    pub omit: Option<String>,
+    pub omit: Option<Vec<String>>,
 }
 
 pub fn run(targets: Option<Vec<String>>, opts: &SnapOpts) -> anyhow::Result<()> {
-    // If the user gives us a list of files, we don't need this information, and it's potentially
-    // expensive.
-
     let mut dataset_list = if opts.files {
         // Given a list of files: map them to parent datasets. Clap has checked we've got args.
         zfs_file::files_to_datasets(
@@ -113,12 +110,10 @@ fn do_the_snapshotting(datasets: &[String], snapname: &str, noop: bool) -> anyho
     Ok(())
 }
 
-fn omit_filesystems(filesystem_list: &[String], rules: &str) -> Vec<String> {
-    let rules: Vec<_> = rules.split(',').map(|s| s.to_string()).collect();
-
+fn omit_filesystems(filesystem_list: &[String], rules: &[String]) -> Vec<String> {
     filesystem_list
         .iter()
-        .filter(|item| rules::omit_rules_match(item, &rules))
+        .filter(|item| rules::omit_rules_match(item, rules))
         .map(|s| s.to_owned())
         .collect()
 }
@@ -147,7 +142,15 @@ mod test {
             "rpool/test_a".to_string(),
         ];
 
-        let mut actual = omit_filesystems(&filesystem_list, "build,other,rpool/test,other/test");
+        let mut actual = omit_filesystems(
+            &filesystem_list,
+            &[
+                "build".to_string(),
+                "other".to_string(),
+                "rpool/test".to_string(),
+                "other/test".to_string(),
+            ],
+        );
 
         expected.sort();
         actual.sort();
@@ -160,7 +163,7 @@ mod test {
             "other/test".to_string(),
         ];
 
-        actual = omit_filesystems(&filesystem_list, "build*,*a");
+        actual = omit_filesystems(&filesystem_list, &["build*".to_string(), "*a".to_string()]);
 
         expected.sort();
         actual.sort();
@@ -172,7 +175,7 @@ mod test {
             "other".to_string(),
         ];
 
-        actual = omit_filesystems(&filesystem_list, "*test*");
+        actual = omit_filesystems(&filesystem_list, &["*test*".to_string()]);
 
         expected.sort();
         actual.sort();

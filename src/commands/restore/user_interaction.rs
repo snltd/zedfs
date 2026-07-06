@@ -32,7 +32,7 @@ pub fn get_choice() -> anyhow::Result<String> {
 }
 
 pub fn parse_choice(input: &str) -> UserChoice {
-    let pattern = Regex::new(r"^(\d+)([a-z]?)$").unwrap();
+    let pattern = Regex::new(r"^(\d+)([a-z]?)$").expect("failed to compile parse_choice regex");
     let captures = pattern.captures(input)?;
 
     let number = captures.get(1)?.as_str().parse::<usize>().ok()?;

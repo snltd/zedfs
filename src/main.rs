@@ -104,15 +104,15 @@ enum Commands {
         /// Specifies that args are files: the filesystems containing these files will be snapshotted
         #[clap(short, long, conflicts_with = "recurse")]
         files: bool,
-        /// Print what would happen, without doing it                                                     
+        /// Print what would happen, without doing it        
         #[clap(short, long)]
         noop: bool,
-        /// Recurse down dataset hierarchies                                                              
+        /// Recurse down dataset hierarchies
         #[clap(short, long)]
         recurse: bool,
-        /// Comma-separated list of filesystems to NOT snapshot. Accepts * as a wildcard.
+        /// Filesystem(s) to NOT snapshot. Accepts * as a wildcard.
         #[clap(short, long)]
-        omit: Option<String>,
+        omit: Option<Vec<String>>,
         /// Dataset or directory name. If not args are given, every dataset will be snapshotted.
         #[clap(required_if_eq_any([("files", "true"), ("recurse", "true")]))]
         targets: Option<Vec<String>>,
