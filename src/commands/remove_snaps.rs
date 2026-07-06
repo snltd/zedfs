@@ -6,8 +6,8 @@ use regex::Regex;
 pub struct RemoveSnapOpts {
     pub files: bool,
     pub snaps: bool,
-    pub omit_fs: Option<String>,
-    pub omit_snaps: Option<String>,
+    pub omit_fs: Option<Vec<String>>,
+    pub omit_snaps: Option<Vec<String>>,
     pub recurse: bool,
     pub all: bool,
     pub noop: bool,
@@ -38,16 +38,18 @@ pub fn run(targets: &[String], opts: &RemoveSnapOpts) -> anyhow::Result<()> {
 
     if snapshot_list.is_empty() {
         println!("No snapshots to remove.");
+    } else {
+        remove_snaps(snapshot_list, opts.noop)?;
     }
 
-    remove_snaps(snapshot_list, opts.noop)?;
     Ok(())
 }
 
 // // Not to be confused with snapshot_list_from_dataset_names(), which only expects
 // // the last segment of the name. This uses the whole path.
 fn snapshot_list_from_dataset_paths(paths: &[String]) -> anyhow::Result<Vec<String>> {
-    Ok(zfs_info::all_snapshots()?
+    Ok(zfs_info::all_snapshots()
+        .context("failed to list snapshots")?
         .iter()
         .filter_map(|line| {
             if paths
@@ -79,15 +81,13 @@ fn remove_snaps(list: Vec<String>, noop: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn filter_list(snapshot_list: &[String], omit_rules: &str, is_snapshot: bool) -> Vec<String> {
-    let rules: Vec<_> = omit_rules.split(',').map(|s| s.to_string()).collect();
-
+fn filter_list(snapshot_list: &[String], omit_rules: &[String], is_snapshot: bool) -> Vec<String> {
     snapshot_list
         .iter()
         .filter(|f| {
             if let Some((fs_name, snap_name)) = f.split_once("@") {
                 let item = if is_snapshot { snap_name } else { fs_name };
-                rules::omit_rules_match(item, &rules)
+                rules::omit_rules_match(item, omit_rules)
             } else {
                 false
             }
@@ -96,11 +96,11 @@ fn filter_list(snapshot_list: &[String], omit_rules: &str, is_snapshot: bool) ->
         .collect()
 }
 
-fn filter_by_snap_name(snapshot_list: &[String], omit_rules: &str) -> Vec<String> {
+fn filter_by_snap_name(snapshot_list: &[String], omit_rules: &[String]) -> Vec<String> {
     filter_list(snapshot_list, omit_rules, true)
 }
 
-fn filter_by_fs_name(snapshot_list: &[String], omit_rules: &str) -> Vec<String> {
+fn filter_by_fs_name(snapshot_list: &[String], omit_rules: &[String]) -> Vec<String> {
     filter_list(snapshot_list, omit_rules, false)
 }
 
@@ -110,7 +110,7 @@ fn snapshot_list_from_dataset_names(dataset_list: &[String]) -> anyhow::Result<V
         .iter()
         .map(|dataset| {
             Regex::new(&format!(r"/{}@", regex::escape(dataset)))
-                .with_context(|| format!("invalid regex for dataset {dataset:?}"))
+                .with_context(|| format!("invalid dataset regex: {dataset:?}"))
         })
         .collect::<anyhow::Result<Vec<Regex>>>()?;
 
@@ -128,7 +128,8 @@ fn snapshot_list_from_dataset_names(dataset_list: &[String]) -> anyhow::Result<V
 
 // All snapshots with the names given in list
 fn snapshot_list_from_snap_names(snaplist: &[String]) -> anyhow::Result<Vec<String>> {
-    Ok(zfs_info::all_snapshots()?
+    Ok(zfs_info::all_snapshots()
+        .context("failed to list all snapshots")?
         .iter()
         .filter_map(|line| {
             if snaplist
@@ -158,14 +159,20 @@ mod test {
 
         let expected_1 = vec!["rpool/test@mysnap1".to_string()];
 
-        assert_eq!(expected_1, filter_by_snap_name(&input, "snap*,other"));
+        assert_eq!(
+            expected_1,
+            filter_by_snap_name(&input, &vec!["snap*".to_string(), "other".to_string()])
+        );
 
         let expected_2 = vec![
             "rpool/test@snap2".to_string(),
             "rpool/test@other".to_string(),
         ];
 
-        assert_eq!(expected_2, filter_by_snap_name(&input, "*1"));
+        assert_eq!(
+            expected_2,
+            filter_by_snap_name(&input, &vec!["*1".to_string()])
+        );
 
         let expected_3 = vec![
             "rpool/test@snap1".to_string(),
@@ -173,8 +180,18 @@ mod test {
             "rpool/test@mysnap1".to_string(),
         ];
 
-        assert_eq!(expected_3, filter_by_snap_name(&input, "*t*"));
-        assert_eq!(input, filter_by_snap_name(&input, "nothing,matches,*this"));
+        assert_eq!(
+            expected_3,
+            filter_by_snap_name(&input, &vec!["*t*".to_string()])
+        );
+
+        assert_eq!(
+            input,
+            filter_by_snap_name(
+                &input,
+                &vec!["nothing,matches".to_string(), "*these".to_string()]
+            )
+        );
     }
 
     #[test]
@@ -194,7 +211,10 @@ mod test {
             "rpool/test@other".to_string(),
         ];
 
-        assert_eq!(expected_1, filter_by_fs_name(&input, "test/*"));
+        assert_eq!(
+            expected_1,
+            filter_by_fs_name(&input, &vec!["test/*".to_string()])
+        );
 
         let expected_2 = vec![
             "rpool/test2@snap2".to_string(),
@@ -202,7 +222,10 @@ mod test {
             "rpool/test@other".to_string(),
         ];
 
-        assert_eq!(expected_2, filter_by_fs_name(&input, "*1"));
+        assert_eq!(
+            expected_2,
+            filter_by_fs_name(&input, &vec!["*1".to_string()])
+        );
 
         let expected_3 = vec![
             "rpool/test2@snap2".to_string(),
@@ -210,9 +233,18 @@ mod test {
             "rpool/test@other".to_string(),
         ];
 
-        assert_eq!(expected_3, filter_by_fs_name(&input, "*test1,test2"));
+        assert_eq!(
+            expected_3,
+            filter_by_fs_name(&input, &vec!["*test1,test2".to_string()])
+        );
+
         let expected_4: Vec<String> = Vec::new();
-        assert_eq!(expected_4, filter_by_fs_name(&input, "*t*"));
-        assert_eq!(input, filter_by_fs_name(&input, "snap"));
+
+        assert_eq!(
+            expected_4,
+            filter_by_fs_name(&input, &vec!["*t*".to_string()])
+        );
+
+        assert_eq!(input, filter_by_fs_name(&input, &vec!["snap".to_string()]));
     }
 }

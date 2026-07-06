@@ -55,12 +55,12 @@ enum Commands {
         /// Purge ALL datasets with this name ANYWHERE in the hierarchy
         #[clap(short = 'A', long = "all-datasets")]
         all: bool,
-        /// Comma-separated list of filesystems from which snapshots should NOT be removed. Accepts * as a wildcard.
+        /// Filesystem(s) from which snapshots should NOT be removed. Accepts * as a wildcard.
         #[clap(short = 'o', long)]
-        omit_fs: Option<String>,
-        /// Comma-separated list of snapshot names which should NOT be removed. Accepts * as a wildcard.
+        omit_fs: Option<Vec<String>>,
+        /// Snapshot name(s) which should NOT be removed. Accepts * as a wildcard.
         #[clap(short = 'O', long)]
-        omit_snaps: Option<String>,
+        omit_snaps: Option<Vec<String>>,
         /// Recurse down dataset hierarchies
         #[clap(short, long, conflicts_with = "snaps", conflicts_with = "all")]
         recurse: bool,
