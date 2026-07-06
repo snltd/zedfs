@@ -7,10 +7,14 @@ use crate::commands::snap::{SnapOpts, SnapType};
 use crate::commands::touch_from_snap::TouchFromSnapOpts;
 use crate::util::types::ZpZrOpts;
 use camino::Utf8PathBuf;
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::generate;
+use clap_complete::shells::{Bash, Fish, Zsh};
 use std::process::ExitCode;
 use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
+
+const MY_NAME: &str = "zedfs";
 
 #[derive(Parser)]
 #[clap(version, about = "Help with some ZFS tasks")]
@@ -24,6 +28,12 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// Generate shell completions
+    Completions {
+        /// Generate completion code for the given shell: bash, fish, or zsh
+        #[arg(required = true)]
+        shell: String,
+    },
     /// Promote files from a ZFS snapshot
     Promote {
         /// By default, existing live files are overwritten. With this option, they are not
@@ -64,7 +74,7 @@ enum Commands {
         /// Recurse down dataset hierarchies
         #[clap(short, long, conflicts_with = "snaps", conflicts_with = "all")]
         recurse: bool,
-        /// Say what would happen, without actually doing it
+        /// Print what would happen, without doing it
         #[arg(short, long)]
         noop: bool,
         /// One or more datasets, snapshots, or directory names
@@ -104,7 +114,7 @@ enum Commands {
         /// Specifies that args are files: the filesystems containing these files will be snapshotted
         #[clap(short, long, conflicts_with = "recurse")]
         files: bool,
-        /// Print what would happen, without doing it        
+        /// Print what would happen, without doing it
         #[clap(short, long)]
         noop: bool,
         /// Recurse down dataset hierarchies
@@ -122,7 +132,7 @@ enum Commands {
         /// Use specified snapshot name, rather than yesterday's
         #[clap(short, long)]
         snapname: Option<String>,
-        /// Print what would happen, without doing it
+        /// Print what would happen, without doing it        
         #[clap(short, long)]
         noop: bool,
         /// One or more directories
@@ -149,6 +159,24 @@ fn main() -> ExitCode {
     tracing::subscriber::set_global_default(subscriber).expect("error setting default subscriber");
 
     let result = match cli.command {
+        Commands::Completions { shell } => {
+            match shell.as_str() {
+                "bash" => {
+                    generate(Bash, &mut Cli::command(), MY_NAME, &mut std::io::stdout());
+                }
+                "fish" => {
+                    generate(Fish, &mut Cli::command(), MY_NAME, &mut std::io::stdout());
+                }
+                "zsh" => {
+                    generate(Zsh, &mut Cli::command(), MY_NAME, &mut std::io::stdout());
+                }
+                _ => {
+                    eprintln!("unspported shell");
+                    return ExitCode::FAILURE;
+                }
+            }
+            return ExitCode::SUCCESS;
+        }
         Commands::Promote {
             no_clobber,
             noop,
