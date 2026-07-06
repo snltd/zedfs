@@ -1,5 +1,5 @@
 use crate::util::{zfs_file, zfs_info};
-use anyhow::{bail, ensure};
+use anyhow::{Context, bail, ensure};
 use camino::{Utf8Path, Utf8PathBuf};
 use filetime::FileTime;
 use glob::glob;
@@ -23,7 +23,9 @@ pub fn run(dirs: Vec<Utf8PathBuf>, opts: &TouchFromSnapOpts) -> anyhow::Result<(
         .unwrap_or_else(|| default_snapname(Zoned::now()));
 
     for path in dirs {
-        let path = path.canonicalize_utf8()?;
+        let path = path
+            .canonicalize_utf8()
+            .with_context(|| format!("failed to canonicalize {path}"))?;
 
         if !path.is_dir() {
             tracing::warn!("{path} is not a directory");
@@ -49,7 +51,8 @@ fn touch_directory(dir: &Utf8Path, snapname: &str, noop: bool) -> anyhow::Result
     );
     tracing::debug!(snapshot_top_level = snapshot_top_level.to_string());
 
-    let dataset_root = zfs_info::dataset_root(dir)?;
+    let dataset_root = zfs_info::dataset_root(dir)
+        .with_context(|| format!("failed to get dataset root for {dir}"))?;
     tracing::debug!(dataset_root = dataset_root.to_string());
 
     let snapshot_dir = if dir == dataset_root {
@@ -88,7 +91,6 @@ fn touch_directory(dir: &Utf8Path, snapname: &str, noop: bool) -> anyhow::Result
     }
 
     ensure!(errs == 0, "Failed to set times in {} files", errs);
-
     Ok(())
 }
 
