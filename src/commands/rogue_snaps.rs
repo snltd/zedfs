@@ -1,16 +1,31 @@
-use crate::util::constants::EXPECTED_SNAP_NAMES;
 use crate::util::zfs_info;
+use anyhow::Context;
 use regex::Regex;
 
-pub fn run() -> anyhow::Result<()> {
-    let all_snapshots = match zfs_info::all_snapshots() {
-        Ok(list) => list,
-        Err(e) => {
-            eprintln!("Failed to get snapshot list: {}", e);
-            std::process::exit(1);
-        }
-    };
+const EXPECTED_SNAP_NAMES: [&str; 19] = [
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+];
 
+pub fn run() -> anyhow::Result<()> {
+    let all_snapshots = zfs_info::all_snapshots().context("failed to get snapshot list")?;
     let mut rogues = find_rogue_snapshots(&all_snapshots, &EXPECTED_SNAP_NAMES);
 
     if rogues.is_empty() {
