@@ -1,3 +1,5 @@
+[![Rust Tests](https://github.com/snltd/zedfs/actions/workflows/test-rust.yml/badge.svg)](https://github.com/snltd/zedfs/actions/workflows/test-rust.yml) [![Lint Tests](https://github.com/snltd/zedfs/actions/workflows/test-lint.yml/badge.svg)](https://github.com/snltd/zedfs/actions/workflows/test-lint.yml)
+
 # zedfs
 
 Some tools that may be useful when working with ZFS.
