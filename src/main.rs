@@ -66,10 +66,10 @@ enum Commands {
         #[clap(short = 'A', long = "all-datasets")]
         all: bool,
         /// Filesystem(s) from which snapshots should NOT be removed. Accepts * as a wildcard.
-        #[clap(short = 'o', long)]
+        #[clap(short = 'o', long, conflicts_with = "files", conflicts_with = "snaps")]
         omit_fs: Option<Vec<String>>,
         /// Snapshot name(s) which should NOT be removed. Accepts * as a wildcard.
-        #[clap(short = 'O', long)]
+        #[clap(short = 'O', long, conflicts_with = "files", conflicts_with = "snaps")]
         omit_snap: Option<Vec<String>>,
         /// Recurse down dataset hierarchies
         #[clap(short, long, conflicts_with = "snaps", conflicts_with = "all")]
@@ -171,7 +171,7 @@ fn main() -> ExitCode {
                     generate(Zsh, &mut Cli::command(), MY_NAME, &mut std::io::stdout());
                 }
                 _ => {
-                    eprintln!("unspported shell");
+                    eprintln!("unsupported shell");
                     return ExitCode::FAILURE;
                 }
             }
