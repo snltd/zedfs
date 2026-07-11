@@ -41,28 +41,33 @@ macro_rules! zfs_cmd {
 }
 
 /// Executes zfs(8) with the given args, returning a result of stdout
+///
 #[macro_export]
 macro_rules! zfs_output {
     ( $( $arg:expr ),+ $(,)? ) => {{
-        let mut cmd = $crate::zfs_cmd!( $($arg), +);
-        let output = cmd.output()?;
-
-        if output.status.success() {
-            Result::<String, anyhow::Error>::Ok(
-                String::from_utf8_lossy(&output.stdout).trim().to_owned()
-            )
-        } else {
-            anyhow::bail!($crate::util::macros::log_error(&cmd, output))
-        }
+        (|| -> anyhow::Result<String> {
+            let mut cmd = $crate::zfs_cmd!( $($arg), +);
+            let output = cmd.output()?;
+            if output.status.success() {
+                Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+            } else {
+                anyhow::bail!($crate::util::macros::log_error(&cmd, output))
+            }
+        })()
     }};
 }
 
 /// Executes zfs(8) with the given args, returning a bool of success or failure
 #[macro_export]
 macro_rules! zfs_success {
-    ( $( $arg:expr ),+ $(,)? ) => {{
+    ( $docmd:expr, $( $arg:expr ),+ $(,)? ) => {{
         let mut cmd = $crate::zfs_cmd!( $($arg), +);
-        let output = cmd.output()?;
-        Ok(output.status.success())
+        match $docmd {
+            $crate::util::types::Noop::True => Ok(true),
+            $crate::util::types::Noop::False=> {
+                let status = cmd.status()?;
+                Ok::<bool, anyhow::Error>(status.success())
+            }
+        }
     }};
 }

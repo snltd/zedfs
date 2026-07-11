@@ -1,3 +1,4 @@
+use crate::util::types::Noop;
 use crate::util::{rules, zfs_file, zfs_info};
 use crate::{zfs_cmd, zfs_success};
 use anyhow::Context;
@@ -16,12 +17,12 @@ pub enum SnapType {
 pub struct SnapOpts {
     pub snap_type: SnapType,
     pub files: bool,
-    pub noop: bool,
+    pub noop: Noop,
     pub recurse: bool,
     pub omit: Option<Vec<String>>,
 }
 
-pub fn run(targets: Option<Vec<String>>, opts: &SnapOpts) -> anyhow::Result<()> {
+pub fn run(targets: Option<Vec<String>>, opts: &SnapOpts) -> anyhow::Result<bool> {
     let mut dataset_list = if opts.files {
         // Given a list of files: map them to parent datasets. Clap has checked we've got args.
         zfs_file::files_to_datasets(
@@ -55,7 +56,7 @@ pub fn run(targets: Option<Vec<String>>, opts: &SnapOpts) -> anyhow::Result<()> 
         do_the_snapshotting(&dataset_list, &snapname, opts.noop)?;
     }
 
-    Ok(())
+    Ok(true)
 }
 
 fn snapname(snap_type: SnapType, ts: &Zoned) -> String {
@@ -71,32 +72,32 @@ fn snapname(snap_type: SnapType, ts: &Zoned) -> String {
 }
 
 fn snapshot_exists(snapshot: &str) -> anyhow::Result<bool> {
-    zfs_success!("list", snapshot)
+    zfs_success!(Noop::False, "list", snapshot)
 }
 
-fn destroy_snapshot(snapshot: &str, noop: bool) -> anyhow::Result<()> {
+fn destroy_snapshot(snapshot: &str, noop: Noop) -> anyhow::Result<()> {
     tracing::info!("removing old {}", &snapshot);
     let mut cmd = zfs_cmd!("destroy", snapshot);
 
-    if !noop {
+    if noop == Noop::False {
         cmd.status()?;
     }
 
     Ok(())
 }
 
-fn take_snapshot(snapshot: &str, noop: bool) -> anyhow::Result<()> {
+fn take_snapshot(snapshot: &str, noop: Noop) -> anyhow::Result<()> {
     tracing::info!("snapshotting {}", &snapshot);
     let mut cmd = zfs_cmd!("snapshot", snapshot);
 
-    if !noop {
+    if noop == Noop::False {
         cmd.status()?;
     }
 
     Ok(())
 }
 
-fn do_the_snapshotting(datasets: &[String], snapname: &str, noop: bool) -> anyhow::Result<()> {
+fn do_the_snapshotting(datasets: &[String], snapname: &str, noop: Noop) -> anyhow::Result<()> {
     for dataset in datasets {
         let snapshot = format!("{}@{}", dataset, snapname);
 

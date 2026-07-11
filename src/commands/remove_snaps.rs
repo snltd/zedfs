@@ -1,3 +1,4 @@
+use crate::util::types::Noop;
 use crate::util::{rules, zfs_file, zfs_info};
 use crate::zfs_cmd;
 use anyhow::{Context, ensure};
@@ -10,7 +11,7 @@ pub struct RemoveSnapOpts {
     pub omit_snap: Option<Vec<String>>,
     pub recurse: bool,
     pub all: bool,
-    pub noop: bool,
+    pub noop: Noop,
 }
 
 enum FilterType {
@@ -18,7 +19,7 @@ enum FilterType {
     SnapshotName,
 }
 
-pub fn run(targets: &[String], opts: &RemoveSnapOpts) -> anyhow::Result<()> {
+pub fn run(targets: &[String], opts: &RemoveSnapOpts) -> anyhow::Result<bool> {
     let mut snapshot_list = if opts.snaps {
         snapshot_list_from_snap_names(targets)
     } else if opts.all {
@@ -47,7 +48,7 @@ pub fn run(targets: &[String], opts: &RemoveSnapOpts) -> anyhow::Result<()> {
         remove_snaps(snapshot_list, opts.noop)?;
     }
 
-    Ok(())
+    Ok(true)
 }
 
 // // Not to be confused with snapshot_list_from_dataset_names(), which only expects
@@ -70,7 +71,7 @@ fn snapshot_list_from_dataset_paths(paths: &[String]) -> anyhow::Result<Vec<Stri
 }
 
 // If any removal fails, fail the whole lot.
-fn remove_snaps(list: Vec<String>, noop: bool) -> anyhow::Result<()> {
+fn remove_snaps(list: Vec<String>, noop: Noop) -> anyhow::Result<()> {
     for snap in list {
         // Double check that we aren't going to remove a dataset
         ensure!(snap.contains("@"), "refusing to remove {snap}");
@@ -78,7 +79,7 @@ fn remove_snaps(list: Vec<String>, noop: bool) -> anyhow::Result<()> {
         let mut cmd = zfs_cmd!("destroy", &snap);
         tracing::info!("removing {snap}");
 
-        if !noop {
+        if noop == Noop::False {
             cmd.status()?;
         }
     }

@@ -1,7 +1,17 @@
 use camino::Utf8PathBuf;
 
-// pub type ArgList = Vec<String>;
-// pub type SnapshotList = Vec<String>;
+#[derive(Clone, Default, Copy, Debug, PartialEq, Eq)]
+pub enum Noop {
+    #[default]
+    False,
+    True,
+}
+
+impl From<bool> for Noop {
+    fn from(noop: bool) -> Self {
+        if noop { Noop::True } else { Noop::False }
+    }
+}
 
 #[derive(Debug)]
 #[cfg_attr(test, derive(PartialEq))]
@@ -13,12 +23,6 @@ pub struct Mount {
 #[derive(Debug)]
 #[cfg_attr(test, derive(Default))]
 pub struct ZpZrOpts {
-    pub noop: bool,
+    pub noop: Noop,
     pub no_clobber: bool,
 }
-
-// pub type Filesystem = String;
-// pub type Snapshot = String;
-// pub type MountList = Vec<(Utf8PathBuf, String)>;
-// pub type Filesystems = Vec<String>;
-// pub type ZfsMounts = Vec<(PathBuf, String)>;

@@ -1,5 +1,5 @@
 use super::user_interaction;
-use crate::util::types::ZpZrOpts;
+use crate::util::types::{Noop, ZpZrOpts};
 use crate::util::{file_copier, zfs_info};
 use anyhow::{Context, bail, ensure};
 use camino::{Utf8Path, Utf8PathBuf};
@@ -40,18 +40,18 @@ pub struct CopyAction {
     dest: Utf8PathBuf,
 }
 
-pub fn run(files: Vec<Utf8PathBuf>, auto: bool, opts: &ZpZrOpts) -> anyhow::Result<()> {
+pub fn run(files: Vec<Utf8PathBuf>, auto: bool, opts: &ZpZrOpts) -> anyhow::Result<bool> {
     for file in files {
         restore_file(&canonical_file(&file)?, auto, opts)?;
     }
 
-    Ok(())
+    Ok(true)
 }
 
-fn restore_file(file: &Utf8Path, auto: bool, opts: &ZpZrOpts) -> anyhow::Result<()> {
+fn restore_file(file: &Utf8Path, auto: bool, opts: &ZpZrOpts) -> anyhow::Result<bool> {
     match restore_action(file, auto, opts)? {
         Some(action) => file_copier::copy_file(&action.src, &action.dest, opts),
-        None => Ok(()),
+        None => Ok(false),
     }
 }
 
@@ -147,13 +147,13 @@ fn diff_files(source_file: &Utf8Path, target_file: &Utf8Path) {
     }
 }
 
-fn backup_target(src: &Utf8Path, noop: bool) -> anyhow::Result<()> {
+fn backup_target(src: &Utf8Path, noop: Noop) -> anyhow::Result<()> {
     let dest = src.with_extension("backup");
     tracing::info!("{src} -> {dest}");
 
     ensure!(!dest.exists(), "Backup target exists: {dest}");
 
-    if !noop {
+    if noop == Noop::False {
         fs::rename(src, dest)?;
     }
 

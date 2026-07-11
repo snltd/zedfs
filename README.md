@@ -33,6 +33,17 @@ $ zedfs completions <SHELL>
 
 `SHELL` may be bash, fish, or zsh.
 
+### passphrased
+
+```sh
+$ zedfs passphrased [OPTIONS] <ACTION>
+
+Arguments:
+  <ACTION>  [possible values: mount, unmount]
+```
+
+Mounts or unmounts all passphrase-protected filesystems.
+
 ### promote
 
 Promote files from a ZFS snapshot

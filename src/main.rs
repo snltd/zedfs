@@ -10,6 +10,7 @@ use camino::Utf8PathBuf;
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::generate;
 use clap_complete::shells::{Bash, Fish, Zsh};
+use commands::passphrased::PassphraseActions;
 use std::process::ExitCode;
 use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
@@ -33,6 +34,14 @@ enum Commands {
         /// Generate completion code for the given shell: bash, fish, or zsh
         #[arg(required = true)]
         shell: String,
+    },
+    /// Mount and share any filesystems which require a passphrase
+    Passphrased {
+        /// Print what would happen, without doing it
+        #[clap(short, long)]
+        noop: bool,
+        #[arg(value_enum)]
+        action: PassphraseActions,
     },
     /// Promote files from a ZFS snapshot
     Promote {
@@ -177,11 +186,18 @@ fn main() -> ExitCode {
             }
             return ExitCode::SUCCESS;
         }
+        Commands::Passphrased { action, noop } => commands::passphrased::run(action, noop.into()),
         Commands::Promote {
             no_clobber,
             noop,
             file_list,
-        } => commands::promote::run(file_list, &ZpZrOpts { no_clobber, noop }),
+        } => commands::promote::run(
+            file_list,
+            &ZpZrOpts {
+                no_clobber,
+                noop: noop.into(),
+            },
+        ),
         Commands::RealUsage { show_zeroes } => commands::real_usage::run(show_zeroes),
         Commands::RemoveSnaps {
             files,
@@ -198,7 +214,7 @@ fn main() -> ExitCode {
                 files,
                 snaps,
                 all,
-                noop,
+                noop: noop.into(),
                 omit_fs,
                 omit_snap,
                 recurse,
@@ -209,7 +225,14 @@ fn main() -> ExitCode {
             no_clobber,
             noop,
             file_list,
-        } => commands::restore::command::run(file_list, auto, &ZpZrOpts { no_clobber, noop }),
+        } => commands::restore::command::run(
+            file_list,
+            auto,
+            &ZpZrOpts {
+                no_clobber,
+                noop: noop.into(),
+            },
+        ),
         Commands::RogueSnaps {} => commands::rogue_snaps::run(),
         Commands::Snap {
             snap_type,
@@ -223,7 +246,7 @@ fn main() -> ExitCode {
             &SnapOpts {
                 snap_type,
                 files,
-                noop,
+                noop: noop.into(),
                 recurse,
                 omit,
             },
@@ -232,11 +255,23 @@ fn main() -> ExitCode {
             snapname,
             noop,
             dirs,
-        } => commands::touch_from_snap::run(dirs, &TouchFromSnapOpts { snapname, noop }),
+        } => commands::touch_from_snap::run(
+            dirs,
+            &TouchFromSnapOpts {
+                snapname,
+                noop: noop.into(),
+            },
+        ),
     };
 
     match result {
-        Ok(_) => ExitCode::SUCCESS,
+        Ok(code) => {
+            if code {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            }
+        }
         Err(e) => {
             eprintln!("ERROR: {e}");
             ExitCode::FAILURE

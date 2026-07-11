@@ -1,12 +1,12 @@
-use crate::util::types::ZpZrOpts;
+use crate::util::types::{Noop, ZpZrOpts};
 use camino::Utf8Path;
 use std::fs;
 
 /// Recursively copies directory trees. Is able to merge with existing targets if opts.no_clobber
 /// is set.
-pub fn copy_file(src: &Utf8Path, dest: &Utf8Path, opts: &ZpZrOpts) -> anyhow::Result<()> {
+pub fn copy_file(src: &Utf8Path, dest: &Utf8Path, opts: &ZpZrOpts) -> anyhow::Result<bool> {
     if src.is_file() {
-        copy_file_action(src, dest, opts)
+        copy_file_action(src, dest, opts)?;
     } else {
         if !dest.exists() {
             fs::create_dir_all(dest)?;
@@ -23,9 +23,9 @@ pub fn copy_file(src: &Utf8Path, dest: &Utf8Path, opts: &ZpZrOpts) -> anyhow::Re
                 copy_file(src_path, &dest_path, opts)?;
             }
         }
-
-        Ok(())
     }
+
+    Ok(true)
 }
 
 fn copy_file_action(src: &Utf8Path, dest: &Utf8Path, opts: &ZpZrOpts) -> anyhow::Result<()> {
@@ -34,7 +34,7 @@ fn copy_file_action(src: &Utf8Path, dest: &Utf8Path, opts: &ZpZrOpts) -> anyhow:
     } else {
         tracing::info!("{src} -> {dest}");
 
-        if !opts.noop && !src.is_dir() {
+        if opts.noop == Noop::False && !src.is_dir() {
             fs::copy(src, dest)?;
         }
     }
@@ -58,7 +58,7 @@ mod tests {
         fs::write(&dest, "please don't clobber me!").unwrap();
 
         let opts = ZpZrOpts {
-            noop: false,
+            noop: Noop::False,
             no_clobber: true,
         };
 
@@ -79,7 +79,7 @@ mod tests {
         fs::write(&dest, "blah blah blah").unwrap();
 
         let opts = ZpZrOpts {
-            noop: false,
+            noop: Noop::False,
             no_clobber: false,
         };
 
@@ -96,7 +96,7 @@ mod tests {
         fs::write(&src, "blah blah blah").unwrap();
 
         let opts = ZpZrOpts {
-            noop: true,
+            noop: Noop::True,
             no_clobber: false,
         };
 
@@ -115,7 +115,7 @@ mod tests {
         fs::write(&src, "blah blah blah").unwrap();
 
         let opts = ZpZrOpts {
-            noop: false,
+            noop: Noop::True,
             no_clobber: false,
         };
 
@@ -136,7 +136,7 @@ mod tests {
         fs::write(&src, "blah blah blah").unwrap();
 
         let opts = ZpZrOpts {
-            noop: false,
+            noop: Noop::True,
             no_clobber: false,
         };
 

@@ -9,12 +9,12 @@ struct Dataset {
     name: String,
 }
 
-pub fn run(show_zeroes: bool) -> anyhow::Result<()> {
+pub fn run(show_zeroes: bool) -> anyhow::Result<bool> {
     let raw_usage = zfs_output!("list", "-t", "all", "-Ho", "name,used,usedbydataset")
         .context("failed to list ZFS datasets")?;
     let datasets = parse_list_output(&raw_usage, show_zeroes);
     println!("{}", format_output(datasets));
-    Ok(())
+    Ok(true)
 }
 
 fn parse_list_output(raw: &str, show_zeroes: bool) -> Vec<Dataset> {

@@ -1,3 +1,4 @@
+pub mod passphrased;
 pub mod promote;
 pub mod real_usage;
 pub mod remove_snaps;
