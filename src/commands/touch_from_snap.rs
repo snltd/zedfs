@@ -1,3 +1,4 @@
+use crate::util::types::Noop;
 use crate::util::{zfs_file, zfs_info};
 use anyhow::{Context, bail, ensure};
 use camino::{Utf8Path, Utf8PathBuf};
@@ -11,12 +12,12 @@ use std::time::SystemTime;
 
 pub struct TouchFromSnapOpts {
     pub snapname: Option<String>,
-    pub noop: bool,
+    pub noop: Noop,
 }
 
 type MTimeMap = BTreeMap<Utf8PathBuf, SystemTime>;
 
-pub fn run(dirs: Vec<Utf8PathBuf>, opts: &TouchFromSnapOpts) -> anyhow::Result<()> {
+pub fn run(dirs: Vec<Utf8PathBuf>, opts: &TouchFromSnapOpts) -> anyhow::Result<bool> {
     let snapname = opts
         .snapname
         .clone()
@@ -35,10 +36,10 @@ pub fn run(dirs: Vec<Utf8PathBuf>, opts: &TouchFromSnapOpts) -> anyhow::Result<(
         touch_directory(&path, &snapname, opts.noop)?;
     }
 
-    Ok(())
+    Ok(true)
 }
 
-fn touch_directory(dir: &Utf8Path, snapname: &str, noop: bool) -> anyhow::Result<()> {
+fn touch_directory(dir: &Utf8Path, snapname: &str, noop: Noop) -> anyhow::Result<()> {
     let snapshot_top_level = match zfs_file::snapshot_dir_from_file(dir) {
         Some(snapshot_root) => snapshot_root.join(snapname),
         None => bail!("{} does not appear to be a ZFS filesystem", dir),
@@ -79,7 +80,7 @@ fn touch_directory(dir: &Utf8Path, snapname: &str, noop: bool) -> anyhow::Result
             if &ts != live_ts {
                 tracing::info!("{target_file} -> {}", formatted_time(ts)?);
 
-                if !noop && set_timestamp(&target_file, ts).is_err() {
+                if noop == Noop::False && set_timestamp(&target_file, ts).is_err() {
                     errs += 1;
                 }
             } else {

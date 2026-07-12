@@ -24,7 +24,7 @@ const EXPECTED_SNAP_NAMES: [&str; 19] = [
     "december",
 ];
 
-pub fn run() -> anyhow::Result<()> {
+pub fn run() -> anyhow::Result<bool> {
     let all_snapshots = zfs_info::all_snapshots().context("failed to get snapshot list")?;
     let mut rogues = find_rogue_snapshots(&all_snapshots, &EXPECTED_SNAP_NAMES);
 
@@ -35,7 +35,7 @@ pub fn run() -> anyhow::Result<()> {
         println!("{}", rogues.join("\n"))
     }
 
-    Ok(())
+    Ok(true)
 }
 
 fn find_rogue_snapshots(snapshot_list: &[String], expected_list: &[&str]) -> Vec<String> {

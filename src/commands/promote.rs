@@ -1,10 +1,10 @@
 use crate::util::file_copier;
-use crate::util::types::ZpZrOpts;
+use crate::util::types::{Noop, ZpZrOpts};
 use anyhow::Context;
 use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
 use std::fs;
 
-pub fn run(files: Vec<Utf8PathBuf>, opts: &ZpZrOpts) -> anyhow::Result<()> {
+pub fn run(files: Vec<Utf8PathBuf>, opts: &ZpZrOpts) -> anyhow::Result<bool> {
     for file in files {
         promote_file(
             &file
@@ -14,10 +14,10 @@ pub fn run(files: Vec<Utf8PathBuf>, opts: &ZpZrOpts) -> anyhow::Result<()> {
         )?;
     }
 
-    Ok(())
+    Ok(true)
 }
 
-fn promote_file(path: &Utf8Path, opts: &ZpZrOpts) -> anyhow::Result<()> {
+fn promote_file(path: &Utf8Path, opts: &ZpZrOpts) -> anyhow::Result<bool> {
     let target_file =
         target_file(path).with_context(|| format!("cannot derive target for {path}"))?;
 
@@ -28,13 +28,14 @@ fn promote_file(path: &Utf8Path, opts: &ZpZrOpts) -> anyhow::Result<()> {
     if !target_dir.exists() {
         tracing::info!("creating {target_dir}");
 
-        if !opts.noop {
+        if opts.noop == Noop::False {
             fs::create_dir_all(target_dir)
                 .with_context(|| format!("failed to create dir: {target_dir}"))?;
         }
     }
 
-    file_copier::copy_file(path, &target_file, opts)
+    file_copier::copy_file(path, &target_file, opts)?;
+    Ok(true)
 }
 
 // Error if path is not in a ZFS snapshot
