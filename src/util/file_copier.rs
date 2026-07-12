@@ -115,7 +115,7 @@ mod tests {
         fs::write(&src, "blah blah blah").unwrap();
 
         let opts = ZpZrOpts {
-            noop: Noop::True,
+            noop: Noop::False,
             no_clobber: false,
         };
 
@@ -136,7 +136,7 @@ mod tests {
         fs::write(&src, "blah blah blah").unwrap();
 
         let opts = ZpZrOpts {
-            noop: Noop::True,
+            noop: Noop::False,
             no_clobber: false,
         };
 
