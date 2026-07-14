@@ -77,21 +77,20 @@ snapshots, sorting from the least to the most.
 ### remove-snaps
 
 ```sh
-$ zedfs remove-snaps [OPTIONS] <TARGETS>...
+$ zedfs remove-snaps [OPTIONS] <TARGET_TYPE> <TARGETS>...
 ```
 
 Batch-removes ZFS snapshots.
 
-- `-f, --files` specifies that `TARGETS` are files. The program will work out
-  which filesystems contain them.
-- `-s, --snaps` means that all `TARGETS` are snapshot names. So `-s monday`
-  would remove all `@monday` snapshots anywhere in your hierarchy.
-
-  If you don't supply `-f` or `-s`, then all `TARGETS` are assumed to be ZFS
-  filesystem names.
-- `-a, --all-datasets` tells the program to remove snapshots under all
-  filesystems whose name matches any of the arguments. So `-a logs` would remove
-  snaps for `rpool/logs` `rpool/application/logs` and `tank/logs`.
+- `TARGET_TYPE` The type of object specified in `TARGETS`. Can be:
+  - `fs-name` which will select all snapshots belonging to filesystems matching
+    any of `TARGETS`
+  - `snap-name` which selects snapshots matching any of `TARGETS`
+  - `file-name` which selects all snapshots belonging to the filesystems which are
+    home to all of the `TARGETS`
+  - `all-snaps` selects all snapshots These selections can be further filtered
+    with `-o` and `-O`, and/or expanded with `-r`.
+- `TARGETS` One or more filesystems, snapshots, or directory names.
 - `-o, --omit-fs <FILESYSTEM>` tells the program NOT to delete snapshots
   belonging to `FILESYSTEM`. `*` can be used as a wildcard at the beginning and
   end of `FILESYSTEM`. This option can be supplied multiple times.
@@ -99,8 +98,7 @@ Batch-removes ZFS snapshots.
   whose names match `SNAPSHOT`. It may be specified multiple times, and `*` is a
   wildcard.
 
-  You can use `-o` and `-O` together, but you can't use them when your arguments
-  are snapshots or dataset names. i.e. with `-s` or `-a`.
+  You can use `-o` and `-O` together.
 - `-r, --recurse` removes snapshots from any children of the datasets selected
   by normal rules. Works in conjunction with `-o` and `-O`. a
 

@@ -11,6 +11,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::generate;
 use clap_complete::shells::{Bash, Fish, Zsh};
 use commands::passphrased::PassphraseActions;
+use commands::remove_snaps::TargetType;
 use std::process::ExitCode;
 use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
@@ -65,27 +66,21 @@ enum Commands {
     /// Bulk-remove snapshots
     #[command(alias = "rm")]
     RemoveSnaps {
-        /// Specifies that args are files: the snapshots containing these files will be destroyed
-        #[clap(short, long)]
-        files: bool,
-        /// Specifies that all args are snapshot names
-        #[clap(short = 's', long = "snaps")]
-        snaps: bool,
-        /// Purge ALL datasets with this name ANYWHERE in the hierarchy
-        #[clap(short = 'A', long = "all-datasets")]
-        all: bool,
         /// Filesystem(s) from which snapshots should NOT be removed. Accepts * as a wildcard.
-        #[clap(short = 'o', long, conflicts_with = "files", conflicts_with = "snaps")]
+        #[clap(short = 'o', long)]
         omit_fs: Option<Vec<String>>,
         /// Snapshot name(s) which should NOT be removed. Accepts * as a wildcard.
-        #[clap(short = 'O', long, conflicts_with = "files", conflicts_with = "snaps")]
+        #[clap(short = 'O', long)]
         omit_snap: Option<Vec<String>>,
         /// Recurse down dataset hierarchies
-        #[clap(short, long, conflicts_with = "snaps", conflicts_with = "all")]
+        #[clap(short, long)]
         recurse: bool,
         /// Print what would happen, without doing it
         #[arg(short, long)]
         noop: bool,
+        /// The type of object specified in the arguments
+        #[arg(value_enum, required = true)]
+        target_type: TargetType,
         /// One or more datasets, snapshots, or directory names
         #[arg(required = true)]
         targets: Vec<String>,
@@ -200,23 +195,19 @@ fn main() -> ExitCode {
         ),
         Commands::RealUsage { show_zeroes } => commands::real_usage::run(show_zeroes),
         Commands::RemoveSnaps {
-            files,
-            snaps,
-            all,
             omit_fs,
             omit_snap,
             noop,
             recurse,
+            target_type,
             targets,
         } => commands::remove_snaps::run(
             &targets,
             &RemoveSnapOpts {
-                files,
-                snaps,
-                all,
                 noop: noop.into(),
                 omit_fs,
                 omit_snap,
+                target_type,
                 recurse,
             },
         ),
