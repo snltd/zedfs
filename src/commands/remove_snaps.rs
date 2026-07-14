@@ -1,16 +1,16 @@
 use crate::util::types::Noop;
-use crate::util::{rules, zfs_file, zfs_info};
+use crate::util::{zfs_file, zfs_info};
 use crate::zfs_cmd;
-use anyhow::{Context, ensure};
+use anyhow::Context;
+use clap::ValueEnum;
 use regex::Regex;
+use std::collections::BTreeSet;
 
 pub struct RemoveSnapOpts {
-    pub files: bool,
-    pub snaps: bool,
     pub omit_fs: Option<Vec<String>>,
     pub omit_snap: Option<Vec<String>>,
     pub recurse: bool,
-    pub all: bool,
+    pub target_type: TargetType,
     pub noop: Noop,
 }
 
@@ -19,28 +19,22 @@ enum FilterType {
     SnapshotName,
 }
 
+#[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
+pub enum TargetType {
+    FsName,
+    SnapName,
+    FileName,
+    AllSnaps,
+}
+
+type Snapshot = (String, String);
+
 pub fn run(targets: &[String], opts: &RemoveSnapOpts) -> anyhow::Result<bool> {
-    let mut snapshot_list = if opts.snaps {
-        snapshot_list_from_snap_names(targets)
-    } else if opts.all {
-        snapshot_list_from_dataset_names(targets)
-    } else if opts.files {
-        let targets = zfs_file::files_to_datasets(targets, &zfs_info::get_mounted_filesystems()?);
-        snapshot_list_from_dataset_paths(&targets)
-    } else if opts.recurse {
-        let targets = zfs_info::dataset_list_recursive(targets, &zfs_info::all_filesystems()?);
-        snapshot_list_from_dataset_paths(&targets)
-    } else {
-        snapshot_list_from_dataset_paths(targets)
-    }?;
+    let all_snaps =
+        all_snaps(&zfs_info::all_snapshots().context("cannot get a list of snapshots")?);
 
-    if let Some(omit_rules) = &opts.omit_snap {
-        snapshot_list = filter_list(&snapshot_list, omit_rules, FilterType::SnapshotName);
-    }
-
-    if let Some(omit_rules) = &opts.omit_fs {
-        snapshot_list = filter_list(&snapshot_list, omit_rules, FilterType::FilesystemName);
-    }
+    let snapshot_list =
+        snapshot_list(targets, opts, all_snaps).context("failed to generate snapshot list")?;
 
     if snapshot_list.is_empty() {
         println!("No snapshots to remove.");
@@ -51,35 +45,130 @@ pub fn run(targets: &[String], opts: &RemoveSnapOpts) -> anyhow::Result<bool> {
     Ok(true)
 }
 
-// // Not to be confused with snapshot_list_from_dataset_names(), which only expects
-// // the last segment of the name. This uses the whole path.
-fn snapshot_list_from_dataset_paths(paths: &[String]) -> anyhow::Result<Vec<String>> {
-    Ok(zfs_info::all_snapshots()
-        .context("failed to list snapshots")?
-        .iter()
-        .filter_map(|line| {
-            if paths
-                .iter()
-                .any(|dataset| line.starts_with(&format!("{}@", dataset)))
-            {
-                Some(line.to_string())
-            } else {
-                None
-            }
+fn snapshot_list(
+    targets: &[String],
+    opts: &RemoveSnapOpts,
+    all_snaps: BTreeSet<Snapshot>,
+) -> anyhow::Result<BTreeSet<Snapshot>> {
+    let all_for_recurse = if opts.recurse {
+        Some(all_snaps.clone())
+    } else {
+        None
+    };
+
+    let mut snapshot_list = match opts.target_type {
+        TargetType::SnapName => {
+            make_snaplist(all_snaps, &matchlist(targets)?, FilterType::SnapshotName)
+        }
+        TargetType::FsName => {
+            make_snaplist(all_snaps, &matchlist(targets)?, FilterType::FilesystemName)
+        }
+        TargetType::FileName => {
+            let fses = zfs_file::files_to_datasets(targets, &zfs_info::get_mounted_filesystems()?);
+            make_snaplist(all_snaps, &matchlist(&fses)?, FilterType::FilesystemName)
+        }
+        TargetType::AllSnaps => all_snaps,
+    };
+
+    if let Some(all) = all_for_recurse {
+        snapshot_list = recurse(all, snapshot_list);
+    }
+
+    if let Some(rules) = &opts.omit_snap {
+        snapshot_list =
+            filter_snaplist(snapshot_list, &matchlist(rules)?, FilterType::SnapshotName);
+    }
+
+    if let Some(rules) = &opts.omit_fs {
+        snapshot_list = filter_snaplist(
+            snapshot_list,
+            &matchlist(rules)?,
+            FilterType::FilesystemName,
+        );
+    }
+
+    Ok(snapshot_list)
+}
+
+fn all_snaps(raw: &[String]) -> BTreeSet<Snapshot> {
+    raw.iter()
+        .filter_map(|d| {
+            d.split_once('@')
+                .map(|(fs, snap)| (fs.to_owned(), snap.to_owned()))
         })
-        .collect())
+        .collect()
+}
+
+fn matchlist(targets: &[String]) -> anyhow::Result<Vec<Regex>> {
+    targets
+        .iter()
+        .map(|t| Regex::new(t).with_context(|| format!("could not create regex from {t}")))
+        .collect()
+}
+
+/// Returns all snapshots whose snapshot name matches anything in `required`.
+fn make_snaplist(
+    all: BTreeSet<Snapshot>,
+    required: &[Regex],
+    ft: FilterType,
+) -> BTreeSet<Snapshot> {
+    all.into_iter()
+        .filter(|(fs, snap)| {
+            required.iter().any(|r| {
+                r.is_match(match ft {
+                    FilterType::FilesystemName => fs,
+                    FilterType::SnapshotName => snap,
+                })
+            })
+        })
+        .collect()
+}
+
+fn filter_snaplist(
+    all: BTreeSet<Snapshot>,
+    required: &[Regex],
+    ft: FilterType,
+) -> BTreeSet<Snapshot> {
+    all.into_iter()
+        .filter(|(fs, snap)| {
+            required.iter().all(|r| {
+                !r.is_match(match ft {
+                    FilterType::FilesystemName => fs,
+                    FilterType::SnapshotName => snap,
+                })
+            })
+        })
+        .collect()
+}
+
+fn recurse(all: BTreeSet<Snapshot>, snaplist: BTreeSet<Snapshot>) -> BTreeSet<Snapshot> {
+    let mut ret = BTreeSet::new();
+    let filesystems: BTreeSet<_> = snaplist.into_iter().map(|(fs, _snap)| fs).collect();
+
+    for fs in filesystems {
+        let mut x: BTreeSet<_> = all
+            .iter()
+            .filter(|(allfs, _allsnap)| allfs.starts_with(&fs))
+            .map(|s| s.to_owned())
+            .collect();
+
+        ret.append(&mut x);
+    }
+
+    ret
 }
 
 // If any removal fails, fail the whole lot.
-fn remove_snaps(list: Vec<String>, noop: Noop) -> anyhow::Result<()> {
-    for snap in list {
-        // Double check that we aren't going to remove a dataset
-        ensure!(snap.contains("@"), "refusing to remove {snap}");
+fn remove_snaps(list: BTreeSet<Snapshot>, noop: Noop) -> anyhow::Result<()> {
+    for (fs, snap) in list {
+        let snap = format!("{fs}@{snap}");
 
         let mut cmd = zfs_cmd!("destroy", &snap);
         tracing::info!("removing {snap}");
 
-        if noop == Noop::False {
+        if noop == Noop::True {
+            println!("would remove {snap}");
+        } else {
             cmd.status()?;
         }
     }
@@ -87,177 +176,90 @@ fn remove_snaps(list: Vec<String>, noop: Noop) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn filter_list(snapshots: &[String], omit_rules: &[String], filter_on: FilterType) -> Vec<String> {
-    snapshots
-        .iter()
-        .filter(|f| {
-            if let Some((fs_name, snap_name)) = f.split_once("@") {
-                let item = match filter_on {
-                    FilterType::FilesystemName => fs_name,
-                    FilterType::SnapshotName => snap_name,
-                };
-                rules::omit_rules_match(item, omit_rules)
-            } else {
-                false
-            }
-        })
-        .map(|s| s.to_string())
-        .collect()
-}
-
-// // All snapshots whose dataset name (final part) is one of those given.
-fn snapshot_list_from_dataset_names(dataset_list: &[String]) -> anyhow::Result<Vec<String>> {
-    let patterns: Vec<Regex> = dataset_list
-        .iter()
-        .map(|dataset| {
-            Regex::new(&format!(r"/{}@", regex::escape(dataset)))
-                .with_context(|| format!("invalid dataset regex: {dataset:?}"))
-        })
-        .collect::<anyhow::Result<Vec<Regex>>>()?;
-
-    Ok(zfs_info::all_snapshots()?
-        .iter()
-        .filter_map(|line| {
-            if patterns.iter().any(|pattern| pattern.is_match(line)) {
-                Some(line.to_string())
-            } else {
-                None
-            }
-        })
-        .collect())
-}
-
-// All snapshots with the names given in list
-fn snapshot_list_from_snap_names(snaplist: &[String]) -> anyhow::Result<Vec<String>> {
-    Ok(zfs_info::all_snapshots()
-        .context("failed to list all snapshots")?
-        .iter()
-        .filter_map(|line| {
-            if snaplist
-                .iter()
-                .any(|snap| line.ends_with(&format!("@{}", snap)))
-            {
-                Some(line.to_string())
-            } else {
-                None
-            }
-        })
-        .collect())
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
 
-    #[test]
-    fn test_filter_by_snap_name() {
-        let input = vec![
-            "rpool/test@snap1".to_string(),
-            "rpool/test@snap2".to_string(),
-            "rpool/test@mysnap1".to_string(),
-            "rpool/test@other".to_string(),
-        ];
+    fn all_test_snaps() -> BTreeSet<Snapshot> {
+        let raw = indoc::indoc! { r#"
+            big@monday
+            big@tuesday
+            big/work@monday
+            big/work@tuesday
+            big/work/src@monday
+            big/work/src@tuesday
+            rpool@january
+            rpool/var@february
+            "#};
 
-        let expected_1 = vec!["rpool/test@mysnap1".to_string()];
+        let lines: Vec<_> = raw.lines().map(|s| s.to_owned()).collect();
+        all_snaps(lines.as_slice())
+    }
 
-        assert_eq!(
-            expected_1,
-            filter_list(
-                &input,
-                &["snap*".to_string(), "other".to_string()],
-                FilterType::SnapshotName,
-            )
-        );
+    fn test_result(targets: &[String], opts: &RemoveSnapOpts) -> String {
+        let set = snapshot_list(targets, opts, all_test_snaps()).unwrap();
 
-        let expected_2 = vec![
-            "rpool/test@snap2".to_string(),
-            "rpool/test@other".to_string(),
-        ];
-
-        assert_eq!(
-            expected_2,
-            filter_list(&input, &["*1".to_string()], FilterType::SnapshotName)
-        );
-
-        let expected_3 = vec![
-            "rpool/test@snap1".to_string(),
-            "rpool/test@snap2".to_string(),
-            "rpool/test@mysnap1".to_string(),
-        ];
-
-        assert_eq!(
-            expected_3,
-            filter_list(&input, &["*t*".to_string()], FilterType::SnapshotName)
-        );
-
-        assert_eq!(
-            input,
-            filter_list(
-                &input,
-                &["nothing,matches".to_string(), "*these".to_string()],
-                FilterType::SnapshotName
-            )
-        );
+        set.iter()
+            .map(|(fs, snap)| format!("{fs}@{snap}\n"))
+            .collect()
     }
 
     #[test]
-    fn test_filter_by_fs_name() {
-        let input = vec![
-            "rpool/test1@snap1".to_string(),
-            "rpool/test2@snap2".to_string(),
-            "rpool/test1@mysnap1".to_string(),
-            "test/data@snap".to_string(),
-            "rpool/test@other".to_string(),
-        ];
+    fn test_01() {
+        let opts = &RemoveSnapOpts {
+            omit_fs: None,
+            omit_snap: None,
+            recurse: false,
+            target_type: TargetType::SnapName,
+            noop: Noop::False,
+        };
 
-        let expected_1 = vec![
-            "rpool/test1@snap1".to_string(),
-            "rpool/test2@snap2".to_string(),
-            "rpool/test1@mysnap1".to_string(),
-            "rpool/test@other".to_string(),
-        ];
+        let expected = indoc::indoc! { r#"
+                big@monday
+                big@tuesday
+                big/work@monday
+                big/work@tuesday
+                big/work/src@monday
+                big/work/src@tuesday
+            "#};
 
-        assert_eq!(
-            expected_1,
-            filter_list(&input, &["test/*".to_string()], FilterType::FilesystemName)
-        );
+        let targets = [".*day".to_owned()];
+        assert_eq!(test_result(&targets, opts), expected);
 
-        let expected_2 = vec![
-            "rpool/test2@snap2".to_string(),
-            "test/data@snap".to_string(),
-            "rpool/test@other".to_string(),
-        ];
+        let targets = ["monday".to_owned(), "tuesday".to_owned()];
+        assert_eq!(test_result(&targets, opts), expected);
 
-        assert_eq!(
-            expected_2,
-            filter_list(&input, &["*1".to_string()], FilterType::FilesystemName)
-        );
+        let targets = ["big".to_owned()];
+        let opts = &RemoveSnapOpts {
+            omit_fs: None,
+            omit_snap: None,
+            recurse: true,
+            target_type: TargetType::FsName,
+            noop: Noop::False,
+        };
+        assert_eq!(test_result(&targets, opts), expected);
 
-        let expected_3 = vec![
-            "rpool/test2@snap2".to_string(),
-            "test/data@snap".to_string(),
-            "rpool/test@other".to_string(),
-        ];
+        let targets = [".*[ra]y$".to_owned()];
+        let opts = &RemoveSnapOpts {
+            omit_fs: Some(vec!["rpool/var".to_owned()]),
+            omit_snap: Some(vec!["january".to_owned()]),
+            recurse: false,
+            target_type: TargetType::SnapName,
+            noop: Noop::False,
+        };
+        assert_eq!(test_result(&targets, opts), expected);
+    }
 
-        assert_eq!(
-            expected_3,
-            filter_list(
-                &input,
-                &["*test1".to_string(), "test2".to_string()],
-                FilterType::FilesystemName
-            )
-        );
-
-        let expected_4: Vec<String> = Vec::new();
-
-        assert_eq!(
-            expected_4,
-            filter_list(&input, &["*t*".to_string()], FilterType::FilesystemName)
-        );
-
-        assert_eq!(
-            input,
-            filter_list(&input, &["snap".to_string()], FilterType::FilesystemName)
-        );
+    #[test]
+    fn test_02() {
+        let targets = [".*/work.*".to_owned()];
+        let opts = &RemoveSnapOpts {
+            omit_fs: Some(vec![".*src".to_owned()]),
+            omit_snap: Some(vec!["monday".to_owned(), "wednesday".to_owned()]),
+            recurse: false,
+            target_type: TargetType::FsName,
+            noop: Noop::False,
+        };
+        assert_eq!(test_result(&targets, opts), "big/work@tuesday\n".to_owned());
     }
 }
