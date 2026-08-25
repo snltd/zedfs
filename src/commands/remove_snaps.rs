@@ -64,7 +64,7 @@ fn snapshot_list(
             make_snaplist(all_snaps, &matchlist(targets)?, FilterType::FilesystemName)
         }
         TargetType::FileName => {
-            let fses = zfs_file::files_to_datasets(targets, &zfs_info::get_mounted_filesystems()?);
+            let fses = zfs_file::files_to_fses(targets, &zfs_info::get_mounted_filesystems()?);
             make_snaplist(all_snaps, &matchlist(&fses)?, FilterType::FilesystemName)
         }
         TargetType::AllSnaps => all_snaps,

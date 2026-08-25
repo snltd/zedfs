@@ -20,7 +20,7 @@ pub fn file_to_dataset(file: &Utf8Path, mounts: &[Mount]) -> Option<String> {
     })
 }
 
-pub fn files_to_datasets(file_list: &[String], zfs_mounts: &[Mount]) -> Vec<String> {
+pub fn files_to_fses(file_list: &[String], zfs_mounts: &[Mount]) -> Vec<String> {
     let filesystems: HashSet<_> = file_list
         .iter()
         .filter_map(|f| file_to_dataset(&Utf8PathBuf::from(f), zfs_mounts))
@@ -51,8 +51,8 @@ mod test {
         assert_eq!(None, snapshot_dir_from_file("/tmp".into()));
 
         assert_eq!(
-            Some("/build/.zfs/snapshot".into()),
-            snapshot_dir_from_file("/build/omnios-extra/build/".into())
+            Some("/build/configs/.zfs/snapshot".into()),
+            snapshot_dir_from_file("/build/configs".into())
         );
     }
 
@@ -121,12 +121,12 @@ mod test {
             Utf8PathBuf::from("fast/zone/build/build"),
             Utf8PathBuf::from("rpool"),
         ];
-        let mut actual = files_to_datasets(arg_list, &mount_list);
+        let mut actual = files_to_fses(arg_list, &mount_list);
 
         expected.sort();
         actual.sort();
 
         assert_eq!(expected, actual);
-        assert!(files_to_datasets(&["/where/is/this".into()], &mount_list).is_empty());
+        assert!(files_to_fses(&["/where/is/this".into()], &mount_list).is_empty());
     }
 }

@@ -1,3 +1,6 @@
+# v2.1.0 (2026-08-25)
+- Add retry logic to `snap`.
+
 # v2.0.0 (2026-07-14)
 
 - Breaking change to arguments of `remove-snaps`.

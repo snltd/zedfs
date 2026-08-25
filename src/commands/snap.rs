@@ -4,6 +4,10 @@ use crate::{zfs_cmd, zfs_success};
 use anyhow::Context;
 use clap::ValueEnum;
 use jiff::{Unit, Zoned};
+use std::thread;
+use std::time::Duration;
+
+const RETRIES: u8 = 3;
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum SnapType {
@@ -23,16 +27,18 @@ pub struct SnapOpts {
 }
 
 pub fn run(targets: Option<Vec<String>>, opts: &SnapOpts) -> anyhow::Result<bool> {
-    let mut dataset_list = if opts.files {
+    let mut ret = true;
+
+    let mut fs_list = if opts.files {
         // Given a list of files: map them to parent datasets. Clap has checked we've got args.
-        zfs_file::files_to_datasets(
+        zfs_file::files_to_fses(
             &targets.context("no files given")?,
             &zfs_info::get_mounted_filesystems()?,
         )
     } else if opts.recurse {
         // Given a list of datasets which we must recurse down.
         // Clap ensures the args are datasets.
-        zfs_info::dataset_list_recursive(
+        zfs_info::fs_list_recursive(
             &targets.context("no filesystems given")?,
             &zfs_info::all_filesystems().context("no ZFS filesystems found")?,
         )
@@ -44,19 +50,19 @@ pub fn run(targets: Option<Vec<String>>, opts: &SnapOpts) -> anyhow::Result<bool
         zfs_info::all_filesystems().context("no ZFS filesystems found")?
     };
 
-    if let Some(omit_rules) = &opts.omit {
-        dataset_list = omit_filesystems(&dataset_list, omit_rules);
+    if let Some(rules) = &opts.omit {
+        fs_list = filter_fslist(&fs_list, rules);
     }
 
-    if dataset_list.is_empty() {
+    if fs_list.is_empty() {
         println!("Nothing to snapshot.");
     } else {
         let now = Zoned::now().round(Unit::Second)?;
         let snapname = snapname(opts.snap_type, &now);
-        do_the_snapshotting(&dataset_list, &snapname, opts.noop)?;
+        ret = take_snaps(&fs_list, &snapname, opts.noop)?;
     }
 
-    Ok(true)
+    Ok(ret)
 }
 
 fn snapname(snap_type: SnapType, ts: &Zoned) -> String {
@@ -71,11 +77,11 @@ fn snapname(snap_type: SnapType, ts: &Zoned) -> String {
     formatted.to_string().to_lowercase()
 }
 
-fn snapshot_exists(snapshot: &str) -> anyhow::Result<bool> {
+fn snap_exists(snapshot: &str) -> anyhow::Result<bool> {
     zfs_success!(Noop::False, "list", snapshot)
 }
 
-fn destroy_snapshot(snapshot: &str, noop: Noop) -> anyhow::Result<()> {
+fn destroy_snap(snapshot: &str, noop: Noop) -> anyhow::Result<()> {
     tracing::info!("removing old {}", &snapshot);
     let mut cmd = zfs_cmd!("destroy", snapshot);
 
@@ -86,32 +92,59 @@ fn destroy_snapshot(snapshot: &str, noop: Noop) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn take_snapshot(snapshot: &str, noop: Noop) -> anyhow::Result<()> {
+fn take_snap(snapshot: &str, noop: Noop) -> anyhow::Result<bool> {
     tracing::info!("snapshotting {}", &snapshot);
     let mut cmd = zfs_cmd!("snapshot", snapshot);
 
-    if noop == Noop::False {
-        cmd.status()?;
+    if noop == Noop::True {
+        return Ok(true);
     }
 
-    Ok(())
+    // Simultaneous executions of this program can mean snapshots fail. Rather than wrapping
+    // the whole thing in a lock, we're going to have three tries at each snapshot.
+    for t in 1..=RETRIES {
+        match cmd.status() {
+            Ok(_) => return Ok(true),
+            Err(e) => {
+                tracing::warn!("failed to snapshot {snapshot} on try {t}/{RETRIES}: {e}");
+                thread::sleep(Duration::from_secs(1));
+            }
+        }
+    }
+
+    tracing::error!("failed to snapshot {snapshot}");
+    Ok(false)
 }
 
-fn do_the_snapshotting(datasets: &[String], snapname: &str, noop: Noop) -> anyhow::Result<()> {
-    for dataset in datasets {
-        let snapshot = format!("{}@{}", dataset, snapname);
+fn take_snaps(fses: &[String], snapname: &str, noop: Noop) -> anyhow::Result<bool> {
+    let mut ret = true;
 
-        if snapshot_exists(&snapshot)? {
-            destroy_snapshot(&snapshot, noop)?;
+    for fs in fses {
+        let snapshot = format!("{}@{}", fs, snapname);
+
+        match snap_exists(&snapshot) {
+            Err(e) => {
+                tracing::error!("SKIPPING {snapshot}: failed to check: {e}");
+                continue;
+            }
+            Ok(true) => {
+                if destroy_snap(&snapshot, noop).is_err() {
+                    tracing::error!("SKIPPING {snapshot}: failed to clean up old snapshot");
+                    continue;
+                }
+            }
+            Ok(false) => (),
         }
 
-        take_snapshot(&snapshot, noop)?;
+        if take_snap(&snapshot, noop).is_err() {
+            ret = false;
+        }
     }
 
-    Ok(())
+    Ok(ret)
 }
 
-fn omit_filesystems(filesystem_list: &[String], rules: &[String]) -> Vec<String> {
+fn filter_fslist(filesystem_list: &[String], rules: &[String]) -> Vec<String> {
     filesystem_list
         .iter()
         .filter(|item| rules::omit_rules_match(item, rules))
@@ -143,7 +176,7 @@ mod test {
             "rpool/test_a".to_string(),
         ];
 
-        let mut actual = omit_filesystems(
+        let mut actual = filter_fslist(
             &filesystem_list,
             &[
                 "build".to_string(),
@@ -164,7 +197,7 @@ mod test {
             "other/test".to_string(),
         ];
 
-        actual = omit_filesystems(&filesystem_list, &["build*".to_string(), "*a".to_string()]);
+        actual = filter_fslist(&filesystem_list, &["build*".to_string(), "*a".to_string()]);
 
         expected.sort();
         actual.sort();
@@ -176,7 +209,7 @@ mod test {
             "other".to_string(),
         ];
 
-        actual = omit_filesystems(&filesystem_list, &["*test*".to_string()]);
+        actual = filter_fslist(&filesystem_list, &["*test*".to_string()]);
 
         expected.sort();
         actual.sort();
