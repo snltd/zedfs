@@ -83,7 +83,7 @@ pub fn dataset_root(path: &Utf8Path) -> anyhow::Result<Utf8PathBuf> {
 
 /// Given a list of ZFS filesystems and knowledge of all ZFS filesystems, returns the subset
 /// of all filesystems under any of the given ones.
-pub fn dataset_list_recursive(from_user: &[String], all_filesystems: &[String]) -> Vec<String> {
+pub fn fs_list_recursive(from_user: &[String], all_filesystems: &[String]) -> Vec<String> {
     let unique_datasets: HashSet<String> = from_user
         .iter()
         .flat_map(|path| {
@@ -167,7 +167,7 @@ mod test {
             "rpool/test".to_string(),
         ];
 
-        let mut actual = dataset_list_recursive(&arg_list, &all_filesystems);
+        let mut actual = fs_list_recursive(&arg_list, &all_filesystems);
 
         expected.sort();
         actual.sort();
