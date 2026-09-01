@@ -1003,7 +1003,7 @@ checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 [[package]]
 name = "snltest"
 version = "0.1.0"
-source = "git+https://github.com/snltd/snltest.git#a1ec945460e030ebf69c50f0df41a6ff9c4addc1"
+source = "git+https://github.com/snltd/snltest.git#88ed38db0441725c13302f9cb5f13d03b7538088"
 dependencies = [
  "camino",
  "camino-tempfile-ext",
@@ -1343,7 +1343,7 @@ dependencies = [
 
 [[package]]
 name = "zedfs"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "anyhow",
  "byte-unit",
