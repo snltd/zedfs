@@ -58,7 +58,7 @@ fn unmount(noop: Noop) -> anyhow::Result<bool> {
 }
 
 fn do_action(action: &str, fs: &str, noop: Noop) -> anyhow::Result<bool> {
-    tracing::info!("{action} {fs}");
+    tracing::debug!("{action} {fs}");
 
     if zfs_success!(noop, action, &fs)
         .with_context(|| format!("failed to run {action} for {fs}"))?
